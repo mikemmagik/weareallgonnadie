@@ -45,6 +45,7 @@ async function main() {
           publisher,
           ai,
           process.argv[3] ?? previousMonth(new Date(), config.timezone),
+          config.timezone,
         ),
       ),
     );

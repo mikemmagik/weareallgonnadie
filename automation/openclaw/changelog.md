@@ -15,7 +15,9 @@ risk. Satire can describe events using software metaphors, but cannot manufactur
 events, quotes, dates, statistics, or imply causal relationships absent from sources.
 If title-only metadata cannot support a detail, omit that detail. Do not turn source
 speculation into fact. Reference actual publication IDs inline using `[post:<id>]`.
-The publication_ids array must list exactly the unique IDs cited, all from input.
+Review all supplied publications; do not truncate the reporting month. Cite the
+selected assertions, with at most 100 unique source references. The publication_ids
+array must list exactly the unique IDs cited, all from input.
 
 Return only JSON, no prose or Markdown fences:
 

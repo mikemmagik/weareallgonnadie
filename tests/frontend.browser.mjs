@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 
 export async function verifyMonitor(page) {
@@ -291,7 +292,7 @@ export async function verifyMonitor(page) {
 }
 
 if (import.meta.main) {
-  execFileSync(
+  const output = execFileSync(
     'npx',
     [
       '--yes',
@@ -302,6 +303,9 @@ if (import.meta.main) {
       'run-code',
       verifyMonitor.toString(),
     ],
-    { stdio: 'inherit' },
+    { encoding: 'utf8', maxBuffer: 2_000_000 },
   );
+  assert.doesNotMatch(output, /### Error/);
+  assert.match(output, /"passed":34/);
+  console.log(output.slice(0, output.indexOf('### Ran Playwright code')));
 }

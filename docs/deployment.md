@@ -19,14 +19,14 @@ See [backend setup](../worker/README.md).
 
 ## Environment variables and secrets
 
-| Name                    | Local foundation                                       | Future production                                                               |
+| Name                    | Local MVP                                              | Future production                                                               |
 | ----------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------- |
 | `API_WRITE_TOKEN`       | Required in `.dev.vars` for authenticated local writes | Required secret binding for write/delete authentication; fail closed if missing |
 | `CLOUDFLARE_API_TOKEN`  | Not needed                                             | Deployment-machine secret with least required permissions, never committed      |
 | `CLOUDFLARE_ACCOUNT_ID` | Not needed                                             | Deployment-machine identifier for the approved account                          |
-| Automation API base URL | Not configured                                         | Same-origin site's HTTPS API base, held in local automation configuration       |
-| Automation bearer token | Not configured                                         | Local secret matching the approved Worker write secret                          |
-| Telegram/AI credentials | Not configured                                         | Only in local agent/bot secret storage; never frontend or repository            |
+| Automation API base URL | Private local environment                              | Same-origin site's HTTPS API base, held in local automation configuration       |
+| Automation bearer token | Private local environment                              | Local secret matching the approved Worker write secret                          |
+| Telegram/AI credentials | Private local environment                              | Only in local agent/bot secret storage; never frontend or repository            |
 
 `DB` and `ASSETS` are bindings, not frontend environment variables. No `PUBLIC_*`
 secret values are permitted. `.dev.vars` and all environment variants are ignored;
@@ -54,8 +54,8 @@ them. `dist/`, `build/`, and `.wrangler/` are ignored generated files.
 
 ## Later deployment outline — not performed in this task
 
-Deployment still needs a separate request. BE-001 implements the backend locally;
-the frontend remains a placeholder, and no production resources are configured.
+Deployment still needs a separate request. INT-001 implements the local frontend,
+backend and mocked automation integration; no production resources are configured.
 
 1. Run validation and review the artifact and source revision. Review current Free
    limits, security headers, logs, write authentication, and D1 schema constraints.
@@ -88,3 +88,19 @@ D1. Revalidate reads and writes after rollback. No rollback action was needed he
 - [Workers secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
 - [Worker versions and rollback](https://developers.cloudflare.com/workers/configuration/versions-and-deployments/)
 - [D1 local development](https://developers.cloudflare.com/d1/best-practices/local-development/)
+
+## INT-001 automation prerequisites
+
+Before enabling on the owner's existing MacBook/OpenClaw host, check the installed
+CLI flags/SDK against [the setup guide](../automation/openclaw/INSTALL.md), provision
+private environment/state outside Git, create the dedicated bot and allowed numeric
+IDs, verify one polling owner with no webhook, create a dedicated tools-disabled
+editorial agent using the existing subscription, then review daily/monthly native
+command schedules. Configure `WAAGD_TIMEZONE` consistently. None of those live changes
+were made in INT-001. Public site availability is independent of local automation.
+
+Review deployment headers/CSP for the three allowlisted iframe origins and external
+preview images; source text remains escaped. Recheck provider playback with valid
+public content during QA. If importing pre-integration data, reconcile any old
+tracking-sensitive canonical URLs with collision/tombstone review before enabling
+writes; the integration tests use a fresh local database.

@@ -1,9 +1,9 @@
 # Backend implementation — BE-001
 
-Four endpoints implement the unchanged version 1 contracts in `shared/contracts.ts`
-and `docs/api.md`. The introductory scaffold descriptions in `docs/api.md` are
-historical; its endpoint semantics remain authoritative. No new public endpoint,
-frontend change, external fetch, or production infrastructure is included.
+Four operations implement version 1 wire contracts in `shared/contracts.ts` and
+`docs/api.md`. INT-001 integrates their frontend and automation consumers and updates
+tracking normalization under the owner's integration request. The Worker does no
+external fetch and no production infrastructure has been created.
 
 ## Local setup
 
@@ -82,11 +82,10 @@ disables remote bindings. No production credentials or database are needed.
 
 ## Contract limitation and Free compatibility
 
-Contract v1 explicitly preserves query parameters and their ordering. Canonicalization
-only uses `URL`, removing fragments and normalizing host/scheme/default ports while
-preserving original URLs, paths, case and trailing slashes. Tracking removal requires
-owner approval and coordinated updates to `shared/contracts.ts`, `docs/api.md`,
-consumers and tests. Provider IDs are usable through the exact `(source, source_item_id)`
+INT-001 removes known tracking parameters (`utm_*`, `fbclid`, `gclid`, `dclid`,
+`msclkid`, `mc_cid`, `mc_eid`) through the shared normalization helper. Content keys,
+encoding/order, original URLs, paths, case and trailing slashes remain intact.
+Provider IDs are usable through the exact `(source, source_item_id)`
 key; this backend never infers IDs from embeds or follows redirects. It never deduplicates
 by event, title, or body. URL-less posts with no source item ID have no retry identity.
 

@@ -256,3 +256,43 @@ test('changelog text stays inert, external links reject executable URLs, relativ
     '2h ago',
   );
 });
+
+test('permalink API consumes the real item envelope and handles missing or malformed publications', async (t) => {
+  const { fetchPost, FeedError } = await import('../src/lib/feed.ts');
+  const original = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+  const post = fixture(1);
+  globalThis.fetch = async (url, init) => {
+    assert.equal(url, `/api/posts/${post.id}`);
+    assert.equal(new Headers(init?.headers).has('authorization'), false);
+    return Response.json({ ok: true, data: post });
+  };
+  assert.deepEqual(await fetchPost(post.id), post);
+  globalThis.fetch = async () =>
+    Response.json(
+      { ok: false, error: { code: 'NOT_FOUND', message: 'Missing' } },
+      { status: 404 },
+    );
+  await assert.rejects(
+    fetchPost(post.id),
+    (error: unknown) =>
+      error instanceof FeedError && error.code === 'NOT_FOUND',
+  );
+  await assert.rejects(
+    fetchPost('invalid'),
+    (error: unknown) =>
+      error instanceof FeedError && error.code === 'VALIDATION_ERROR',
+  );
+  globalThis.fetch = async () =>
+    Response.json({
+      ok: true,
+      data: {
+        ...post,
+        title: 'ok',
+        embed: { kind: 'link', url: 'javascript:alert(1)', label: null },
+      },
+    });
+  await assert.rejects(fetchPost(post.id), /unavailable/);
+});

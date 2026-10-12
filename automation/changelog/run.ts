@@ -15,17 +15,58 @@ export function previousMonth(now: Date, timezone = 'Asia/Bangkok'): string {
   const month = Number(parts.find((p) => p.type === 'month')!.value);
   return new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 7);
 }
-// Archive months use UTC insertion times (the API's immutable clock).
+/** Calendar membership uses the scheduler timezone; storage timestamps remain UTC. */
+export function calendarMonth(date: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat('en', {
+    year: 'numeric',
+    month: '2-digit',
+    timeZone: timezone,
+  }).formatToParts(date);
+  return `${parts.find((p) => p.type === 'year')!.value}-${parts.find((p) => p.type === 'month')!.value}`;
+}
+export function monthStart(month: string, timezone: string): Date {
+  const utc = Date.parse(`${month}-01T00:00:00.000Z`);
+  let instant = utc;
+  // Resolve the wall-clock boundary, including ordinary DST offsets, without a timezone dependency.
+  const formatter = new Intl.DateTimeFormat('en', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  });
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const parts = Object.fromEntries(
+      formatter.formatToParts(new Date(instant)).map((p) => [p.type, p.value]),
+    );
+    const wall = Date.UTC(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day),
+      Number(parts.hour),
+      Number(parts.minute),
+      Number(parts.second),
+    );
+    const next = instant + utc - wall;
+    if (next === instant) return new Date(instant);
+    instant = next;
+  }
+  throw new Error('Calendar boundary could not be resolved.');
+}
 export async function runChangelog(
   publisher: Publisher,
   ai: AI,
   month: string,
+  timezone = 'Asia/Bangkok',
 ) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error('Invalid month.');
   return publisher.state.locked(`changelog-${month}`, async () => {
     const id = `humanity-changelog:${month}`;
     const draftName = `changelog-${month}.json`;
-    const start = new Date(`${month}-01T00:00:00.000Z`);
+    const start = monthStart(month, timezone);
     const feed = await publisher.api.posts(start);
     if (
       feed.some(
@@ -37,9 +78,12 @@ export async function runChangelog(
     )
       return { outcome: 'already_exists' };
     // Deleted publications never enter generation. Previous changelogs are not source events.
-    const posts = feed
-      .filter((p) => p.published_at.startsWith(month) && p.type !== 'changelog')
-      .slice(0, 100);
+    const posts = feed.filter(
+      (p) =>
+        p.deleted_at === null &&
+        calendarMonth(new Date(p.published_at), timezone) === month &&
+        p.type !== 'changelog',
+    );
     if (!posts.length) return { outcome: 'empty_month' };
     const saved = await publisher.state.read(draftName);
     let payload: CreatePostInput;
@@ -57,10 +101,7 @@ export async function runChangelog(
       if (
         !Array.isArray(payload.references) ||
         payload.references.some(
-          (r) =>
-            !posts.some(
-              (p) => r.url === `${publisher.api.base}/api/posts/${p.id}`,
-            ),
+          (r) => !posts.some((p) => r.url === publisher.api.siteUrl(p.id)),
         )
       ) {
         await publisher.state.remove(draftName);
@@ -73,6 +114,7 @@ export async function runChangelog(
       const output = record(
         await ai.run('changelog', {
           month,
+          timezone,
           posts: posts.map((p) => ({
             id: p.id,
             title: p.title,
@@ -117,7 +159,7 @@ export async function runChangelog(
         references: posts
           .filter((p) => ids.has(p.id))
           .map((p) => ({
-            url: `${publisher.api.base}/api/posts/${p.id}`,
+            url: publisher.api.siteUrl(p.id),
             title: `${p.id}: ${p.title}`.slice(0, 300),
           })),
       };

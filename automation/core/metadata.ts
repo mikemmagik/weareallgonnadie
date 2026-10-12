@@ -4,7 +4,13 @@ import type {
   PostOrigin,
 } from '../../shared/contracts.ts';
 import { isHttpUrl } from '../../shared/contracts.ts';
-import { normalizeUrl, publicHttp, retryRequest } from './http.ts';
+import {
+  normalizeUrl,
+  publicHttp,
+  publicUrl,
+  RequestFailure,
+  retryRequest,
+} from './http.ts';
 import type { Http } from './http.ts';
 
 export function decode(value: string): string {
@@ -129,14 +135,20 @@ export async function prepareUrl(
   input: string,
   http: Http = publicHttp,
 ): Promise<CreatePostInput> {
-  const url = normalizeUrl(input);
-  const response = await retryRequest(http, url);
-  // A blocked/private/paywalled URL is not retried via a bypass or provider scraper.
-  const html = (response.headers.get('content-type') ?? '').includes(
-    'text/html',
-  )
-    ? await response.text()
-    : '';
+  const url = publicUrl(input).toString();
+  let html = '';
+  try {
+    const response = await retryRequest(http, url);
+    if (
+      (response.headers.get('content-type') ?? '')
+        .toLowerCase()
+        .includes('text/html')
+    )
+      html = await response.text();
+  } catch (error) {
+    // Metadata availability is optional. Unsafe targets remain failures; never bypass them.
+    if (!(error instanceof RequestFailure)) throw error;
+  }
   const metadata = extractMetadata(html, url);
   const payload = linkPayload(
     input,

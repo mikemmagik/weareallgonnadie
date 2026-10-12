@@ -224,7 +224,7 @@ test('database failures are sanitized; missing dependency is unavailable', async
 test('URL normalization follows contract v1 without merging different content', () => {
   assert.equal(
     canonicalizeUrl('HTTP://EXAMPLE.COM:80/News?b=2&a=1&utm_source=test#part'),
-    'http://example.com/News?b=2&a=1&utm_source=test',
+    'http://example.com/News?b=2&a=1',
   );
   assert.equal(
     canonicalizeUrl('https://EXAMPLE.com:443'),

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +14,11 @@ import type {
   PostsPage,
   DeletePostResult,
 } from '../shared/contracts.ts';
+import { Api } from '../automation/core/api.ts';
+import { Publisher, State } from '../automation/core/state.ts';
+import { handleUpdate } from '../automation/telegram/handler.ts';
+import { runDiscovery } from '../automation/discovery/run.ts';
+import { runChangelog } from '../automation/changelog/run.ts';
 import { encodeCursor } from '../worker/cursor.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -46,10 +52,6 @@ test(
     const config = join(directory, 'wrangler.json');
     await mkdir(join(directory, 'assets'));
     await writeFile(
-      join(directory, 'assets', 'index.html'),
-      '<!doctype html><title>Test assets</title>',
-    );
-    await writeFile(
       config,
       JSON.stringify({
         name: 'waagd-backend-local-test',
@@ -57,7 +59,7 @@ test(
         compatibility_date: '2026-10-12',
         workers_dev: false,
         assets: {
-          directory: join(directory, 'assets'),
+          directory: join(root, 'dist'),
           binding: 'ASSETS',
           run_worker_first: ['/api', '/api/*'],
         },
@@ -478,6 +480,271 @@ test(
         },
       );
       await reset();
+      await t.test(
+        'tracking variants duplicate atomically and content query parameters remain distinct',
+        async () => {
+          const original = await create({
+            ...fixture,
+            url: 'https://example.com/item?v=one&utm_source=a',
+            source_item_id: null,
+          });
+          const duplicate = await create({
+            ...fixture,
+            url: 'https://example.com/item?v=one&fbclid=b&utm_medium=c',
+            source_item_id: null,
+          });
+          assert.equal(duplicate.status, 200);
+          assert.equal(duplicate.data.post.id, original.data.post.id);
+          assert.equal(
+            original.data.post.canonical_url,
+            'https://example.com/item?v=one',
+          );
+          assert.equal(
+            (
+              await create({
+                ...fixture,
+                url: 'https://example.com/item?v=two',
+                source_item_id: null,
+              })
+            ).status,
+            201,
+          );
+          await api(`/${original.data.post.id}`, { method: 'DELETE', headers });
+          const tombstone = await create({
+            ...fixture,
+            url: 'https://example.com/item?utm_campaign=x&v=one',
+            source_item_id: null,
+          });
+          assert.equal(tombstone.data.outcome, 'duplicate');
+          assert.ok(tombstone.data.post.deleted_at);
+        },
+      );
+      await reset();
+      await t.test(
+        'automation and mocked Telegram publish against real local Worker/D1',
+        async () => {
+          const publisher = new Publisher(
+            new Api(base, 'integration-test-only'),
+            new State(join(directory, 'automation-state')),
+          );
+          const input = {
+            ...fixture,
+            url: 'https://example.com/automation',
+            source_item_id: 'automation',
+          };
+          assert.equal((await publisher.submit(input)).outcome, 'created');
+          assert.equal((await publisher.submit(input)).outcome, 'duplicate');
+          const update = {
+            message: {
+              from: { id: 123, is_bot: false },
+              chat: { id: 123, type: 'private' },
+              text: 'https://example.com/manual?utm_source=telegram',
+            },
+          };
+          const metadata = async () => new Response('', { status: 403 });
+          const reply = await handleUpdate(
+            update,
+            new Set(['123']),
+            publisher,
+            metadata,
+          );
+          assert.match(reply!.text, /^PUBLISHED/);
+          const id = reply!.text.match(/post=([0-9a-f-]+)/)![1]!;
+          const publication = (await api<Post>(`/${id}`)).data;
+          assert.equal(publication.origin, 'telegram');
+          assert.equal(publication.title, 'example.com');
+          assert.equal(publication.canonical_url, 'https://example.com/manual');
+          assert.match(
+            (await handleUpdate(update, new Set(['123']), publisher, metadata))!
+              .text,
+            /^ALREADY EXISTS/,
+          );
+          const denied = await api(`/${id}`, { method: 'DELETE' });
+          assert.equal(denied.status, 401);
+          const deletion = await handleUpdate(
+            {
+              ...update,
+              message: { ...update.message, text: `/delete ${id}` },
+            },
+            new Set(['123']),
+            publisher,
+          );
+          assert.match(deletion!.text, /^DELETED/);
+          assert.equal((await api(`/${id}`)).status, 404);
+          const tombstone = await handleUpdate(
+            update,
+            new Set(['123']),
+            publisher,
+            metadata,
+          );
+          assert.match(tombstone!.text, /remains deleted/);
+          const discovery = await runDiscovery(
+            publisher,
+            { run: async () => ({ selected: [] }) },
+            [
+              {
+                name: 'fixture',
+                url: 'https://feeds.example/rss',
+                enabled: true,
+                format: 'feed',
+              },
+            ],
+            new Date('2026-10-12T02:00:00.000Z'),
+            async () =>
+              new Response(
+                '<rss><channel><item><title>Existing source event</title><link>https://example.com/discovery</link><pubDate>Mon, 12 Oct 2026 00:00:00 GMT</pubDate></item></channel></rss>',
+              ),
+          );
+          assert.equal(discovery.published, 0);
+          assert.equal(discovery.candidates, 1);
+          const monthly = await runChangelog(
+            publisher,
+            {
+              run: async (_task, data) => {
+                const ids = (data as { posts: { id: string }[] }).posts.map(
+                  (p) => p.id,
+                );
+                assert.deepEqual(ids, [(await publisher.api.posts())[0]!.id]);
+                return {
+                  body: `[ADDED] [post:${ids[0]}] ${'Supported satire '.repeat(80)}`,
+                  publication_ids: ids,
+                };
+              },
+            },
+            new Date().toISOString().slice(0, 7),
+            'UTC',
+          );
+          assert.equal(monthly.outcome, 'created');
+          const rerun = await runChangelog(
+            new Publisher(
+              new Api(base, 'integration-test-only'),
+              new State(join(directory, 'fresh-monthly-state')),
+            ),
+            {
+              run: async () => {
+                assert.fail('Existing monthly post must skip AI.');
+              },
+            },
+            new Date().toISOString().slice(0, 7),
+            'UTC',
+          );
+          assert.equal(rerun.outcome, 'already_exists');
+          const home = await fetch(base);
+          assert.equal(home.status, 200);
+          assert.match(await home.text(), /Incoming transmissions/);
+        },
+      );
+      await reset();
+      if (process.env.WAAGD_BROWSER_TESTS === '1') {
+        await t.test(
+          'production frontend, actual API, embeds, pagination, permalinks and deletion in Chromium',
+          async () => {
+            const browser = async (
+              mode: string,
+              ids: Record<string, string> = {},
+            ) => {
+              const { stdout } = await promisify(execFile)(
+                process.execPath,
+                [
+                  join(root, 'tests/mvp.browser.mjs'),
+                  JSON.stringify({ base, mode, ids }),
+                ],
+                { cwd: root, encoding: 'utf8', maxBuffer: 2_000_000 },
+              );
+              assert.match(stdout, /"passed":\d+/);
+              console.log(stdout.trim());
+            };
+            await browser('empty');
+            const ids: Record<string, string> = {};
+            for (let i = 0; i < 25; i++) {
+              const result = await create({
+                ...fixture,
+                url: `https://example.com/local/${i}`,
+                source_item_id: `local-${i}`,
+                title: `Local evidence ${i}`,
+                preview: null,
+                embed: null,
+                references: [],
+              });
+              if (i === 0) ids.target = result.data.post.id;
+            }
+            const variants: Record<string, CreatePostInput> = {
+              video: {
+                ...fixture,
+                type: 'video',
+                url: 'https://youtu.be/abcdefghijk',
+                title: 'Local video',
+                source_item_id: 'local-video',
+                preview: null,
+                embed: {
+                  kind: 'provider',
+                  provider: 'youtube',
+                  id: 'abcdefghijk',
+                  url: 'https://youtu.be/abcdefghijk',
+                },
+              },
+              fallback: {
+                ...fixture,
+                type: 'video',
+                url: 'https://example.com/unavailable',
+                title: 'Local fallback',
+                source_item_id: 'local-fallback',
+                preview: null,
+                embed: {
+                  kind: 'link',
+                  url: 'https://example.com/unavailable',
+                  label: null,
+                },
+              },
+              meme: {
+                ...fixture,
+                type: 'meme',
+                url: 'https://example.com/meme',
+                title: 'Local meme',
+                source_item_id: 'local-meme',
+                preview: {
+                  image_url: 'https://example.com/image.png',
+                  alt_text: null,
+                },
+                embed: null,
+              },
+              log: {
+                ...fixture,
+                type: 'changelog',
+                url: null,
+                canonical_url: null,
+                title: 'Local changelog',
+                source_item_id: 'local-log',
+                preview: null,
+                embed: null,
+                body: '[ADDED]\n- Existing content\n<script>window.pwned=true</script>',
+                references: [
+                  {
+                    url: `${base}/?post=${ids.target}`,
+                    title: 'Source publication',
+                  },
+                ],
+              },
+            };
+            for (const [key, input] of Object.entries(variants))
+              ids[key] = (await create(input)).data.post.id;
+            assert.ok(
+              !(await api<PostsPage>('?limit=20')).data.posts.some(
+                (p) => p.id === ids.target,
+              ),
+            );
+            await browser('feed', ids);
+            await api(`/${ids.target}`, { method: 'DELETE', headers });
+            await browser('deleted', ids);
+            assert.equal(
+              (await fetch(base)).status,
+              200,
+              'Static site needs no automation process',
+            );
+          },
+        );
+        await reset();
+      }
       await t.test(
         'auth and validation failures leave storage unchanged; errors are consistent',
         async () => {

@@ -5,10 +5,9 @@ native TypeScript/ESM and built-in libraries. **No additional dependencies, mode
 service, database, broker, Docker or server.** No live agents, bots, credentials,
 schedules or deployment were changed.
 
-The backend in this checkout still returns `501 NOT_IMPLEMENTED`. These workflows
-are tested against contract-compatible mocks. Live publishing requires the backend
-owner to implement `docs/api.md`. A 501 is terminal, never reported as publication.
-Backend, frontend and shared contracts remain untouched.
+INT-001 connects these workflows to the implemented local Worker/D1 API. Root
+validation includes automation typechecking/tests and real HTTP integration. A 501
+remains a terminal error for compatibility; integrated routes no longer return it.
 
 ## Workflows
 
@@ -24,16 +23,17 @@ Backend, frontend and shared contracts remain untouched.
   five reservations per UTC day including reruns; 0–2 is valid. Source and publication
   failures are isolated and included in the JSON result. No fabricated news articles.
 - **Monthly:** previous calendar month, computed in the schedule timezone, grouped
-  using the API's UTC insertion timestamps. Public feed pagination only: no research,
+  using immutable UTC insertion timestamps converted into the configured timezone. Public feed pagination only: no research,
   deleted posts or previous changelogs as source events. Enforce 150–250 words and
   exact known publication citations. Stable `humanity-changelog:YYYY-MM` in the
   `We Are All Gonna Die` namespace prevents duplicates. Empty months skip publication.
   Saved drafts preserve the payload for uncertain retries.
 
 References retain the existing `{url,title}` contract: source publication IDs are
-encoded in `/api/posts/<uuid>` URLs and reference titles. No extra wire fields.
-Telegram site links use `/?post=<uuid>`; the foundation frontend does not yet resolve
-individual publications. A future UI may coordinate its own permalink format.
+encoded in readable `/?post=<uuid>` URLs and reference titles. Telegram uses the same
+permalink, resolved through the existing item API inside the homepage. All visible
+source publications in the month reach generation; the 100-reference limit applies
+only to cited output, not monthly input.
 
 ## Local testing without credentials
 
@@ -46,15 +46,14 @@ node --test automation/tests/*.test.ts
 npm run validate
 ```
 
-Root validation keeps its existing foundation commands. Automation typechecking and
-tests are separate explicit checks because this task owns only `automation/`.
+Root validation includes these automation checks and local API integration.
 Tests mock sources, metadata, API requests/deletes/duplicates, Telegram and the AI
 boundary. A temporary fake executable tests the OpenClaw CLI adapter; no installed
 OpenClaw, real Telegram bot, network source or LLM is needed.
 
 ## Environment and commands
 
-See [.env.example](.env.example); values are placeholders. At later integration,
+See [.env.example](.env.example); values are placeholders. For actual operation,
 create a private environment file **outside Git and the agent workspace**. Never put
 secrets in command arguments, model prompts, plugin configuration or public assets.
 The CLI does not implicitly load `.env`: use Node `--env-file=/private/path/file.env`
@@ -72,7 +71,7 @@ or the service owner's environment injection.
 | `WAAGD_TIMEZONE`             | Monthly                 | IANA timezone, default `Asia/Bangkok`; match schedule        |
 | `WAAGD_SOURCES_FILE`         | Optional daily override | JSON file, defaults to supplied source example               |
 
-Later, with an implemented API and a privately supplied environment:
+With the local or deployed API and a privately supplied environment:
 
 ```sh
 node --env-file=/absolute/private/waagd.env automation/cli.ts telegram
@@ -112,9 +111,10 @@ and conservatively excluded IPv6 ranges fail closed. Only text/XML/JSON bodies a
 buffered; preview image URLs are metadata only. No raw embed HTML, media reuploads,
 protected scraping, credentials, paywall workarounds or authentication bypasses.
 
-Accessible pages with no metadata get hostname titles and link cards. Known public
+Unavailable or missing metadata gets a neutral hostname title and optional link card. Known public
 YouTube/Reddit/TikTok/Instagram URL forms get provider hints; rendering is not promised.
-Short URLs/unsupported forms keep links. Blocked or unavailable pages fail technically.
+Short URLs/unsupported forms keep links. Unsafe targets fail technically; ordinary HTTP/transport metadata failures still allow
+the original public link to publish without inventing a headline.
 
 Private state uses atomic `0600` JSON files and workflow/payload locks:
 
@@ -145,12 +145,14 @@ resubmitting; no separate broker is introduced.
 
 [openclaw/INSTALL.md](openclaw/INSTALL.md) contains version checks, dedicated-agent
 setup, separate-bot service templates and native scheduling commands. Installed
-OpenClaw version/configuration is unknown; verify compatibility before enabling.
+OpenClaw is absent on the INT-001 Mac per owner clarification; verify the version
+and configuration on the actual installation host before enabling.
 Nothing was installed or scheduled during this task.
 
 Limitations: lightweight RSS/Atom/HTML metadata parsing, no JavaScript rendering,
 protected platform scraping or additional source pagination. Monthly generation uses
-at most 100 newest source publications (the contract reference limit). Feed-based
+all visible source publications in the configured month, with at most 100 cited
+references under the unchanged wire contract. Feed-based
 history deduplication has a 1,000-page cap and fails closed on truncation. Public
 cursor reads are not snapshots: deletion concurrent with final POST cannot be checked
 atomically through the current API. Runtime checks validate IDs and output shapes;

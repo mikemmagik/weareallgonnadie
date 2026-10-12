@@ -93,6 +93,17 @@ import '../styles/global.css';
         <p id="demo-notice" class="demo-notice" hidden>
           Development preview // fictional transmissions
         </p>
+        <div id="permalink-state" hidden>
+          <p id="permalink-message" role="status" aria-live="polite"></p>
+          <button
+            id="permalink-retry"
+            class="terminal-button"
+            type="button"
+            hidden
+          >
+            Retry publication ↻
+          </button>
+        </div>
         <div id="feed" class="feed" aria-busy="true"></div>
         <div id="feed-sentinel" class="feed-state" data-state="loading">
           <span class="state-symbol" aria-hidden="true">

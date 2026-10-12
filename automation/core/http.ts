@@ -2,7 +2,7 @@ import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { isHttpUrl } from '../../shared/contracts.ts';
+import { isHttpUrl, normalizePublicationUrl } from '../../shared/contracts.ts';
 
 export type Http = (url: string, init?: RequestInit) => Promise<Response>;
 export class RequestFailure extends Error {
@@ -15,6 +15,30 @@ export class RequestFailure extends Error {
     this.retryable = retryable;
     this.retryAt = retryAt;
   }
+}
+export class UnsafeUrlError extends Error {
+  constructor() {
+    super('External URL is not a public HTTP(S) target.');
+  }
+}
+/** Validate literals before fetching; DNS/redirect checks are enforced by publicHttp. */
+export function publicUrl(value: string): URL {
+  if (!isHttpUrl(value)) throw new UnsafeUrlError();
+  const target = new URL(value);
+  const host = target.hostname
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '')
+    .toLowerCase();
+  if (
+    !['', '80', '443'].includes(target.port) ||
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    (isIP(host) && !isPublicAddress(host))
+  )
+    throw new UnsafeUrlError();
+  target.hash = '';
+  return target;
 }
 export const pause = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -34,7 +58,8 @@ export async function retryRequest(
           ? AbortSignal.any([init.signal, AbortSignal.timeout(35_000)])
           : AbortSignal.timeout(35_000),
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof UnsafeUrlError) throw error;
       init.signal?.throwIfAborted();
       if (attempt === 2) throw new RequestFailure(0, true);
       await sleep(500 * 2 ** attempt + Math.random() * 200);
@@ -89,24 +114,19 @@ export function isPublicAddress(address: string): boolean {
   );
 }
 export function normalizeUrl(value: string): string {
-  if (!isHttpUrl(value)) throw new Error('Invalid HTTP(S) URL.');
-  const url = new URL(value);
-  url.hash = '';
-  return url.toString();
+  return normalizePublicationUrl(value);
 }
 /** DNS pinned per request; every redirect is independently checked, no cookies or auth. */
 export const publicHttp: Http = async (input, init = {}) => {
-  let url = normalizeUrl(input);
+  let url = publicUrl(input).toString();
   for (let redirects = 0; redirects <= 4; redirects++) {
-    const target = new URL(url);
-    if (!['', '80', '443'].includes(target.port))
-      throw new Error('Nonstandard port.');
+    const target = publicUrl(url);
     const host = target.hostname.replace(/^\[|\]$/g, '');
     const addresses = isIP(host)
       ? [{ address: host, family: isIP(host) }]
       : await lookup(host, { all: true });
     if (!addresses.length || addresses.some((a) => !isPublicAddress(a.address)))
-      throw new Error('Nonpublic address.');
+      throw new UnsafeUrlError();
     const pinned = addresses[0]!;
     const response = await new Promise<Response>((resolve, reject) => {
       const req = (target.protocol === 'https:' ? httpsRequest : httpRequest)(
@@ -171,7 +191,7 @@ export const publicHttp: Http = async (input, init = {}) => {
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const location = response.headers.get('location');
       if (!location) throw new Error('Redirect missing location.');
-      url = normalizeUrl(new URL(location, url).toString());
+      url = publicUrl(new URL(location, url).toString()).toString();
       continue;
     }
     return response;

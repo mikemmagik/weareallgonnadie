@@ -38,6 +38,29 @@ D1 uses strict storage, two permanent duplicate indexes and a visible-feed index
 POST performs a targeted conflict-ignore insert and duplicate lookup in one D1 batch
 transaction. DELETE atomically preserves the first deletion timestamp. Authentication
 uses Web Crypto HMAC verification before parsing or persistence. No dependency,
-Foundation configuration or public contract changed. Query parameter preservation
-remains the approved canonicalization rule; tracking removal is deferred for owner
-review. See [backend implementation](../worker/README.md).
+Foundation configuration or public contract changed. BE-001 originally preserved every query parameter. INT-001 refines that rule below. See [backend implementation](../worker/README.md).
+
+## INT-001 coordinated integration decisions
+
+The owner's integration request authorizes necessary contract correction and requires
+tracking-aware duplicate behavior. The sole shared semantic change is a common
+`normalizePublicationUrl` helper: remove known tracking keys while preserving content
+parameters and original query encoding/order. Wire fields, errors, cursor version,
+reference limits and deletion semantics remain v1. Backend/automation consumers,
+API documentation and contract, unit and real-D1 tests change together.
+
+Permalinks use the existing homepage and item API. Monthly references use those
+readable permalinks instead of raw JSON endpoints. Monthly input includes the full
+reporting month in the configured timezone; at most 100 _cited_ references remain
+allowed, requiring no schema expansion. An exceptional unresolved local midnight
+boundary fails explicitly rather than silently changing periods.
+
+Metadata availability is optional for manual Telegram URLs. Neutral hostname titles
+retain human approval without inventing factual headlines. Unsafe URLs remain a
+non-retryable error across metadata fallback, including private redirect destinations.
+Fetching preserves the original query independently of canonical identity.
+
+The existing OpenClaw plugin remains the primary poller lifecycle, avoiding another
+service manager. Its supervised Node child keeps the existing standalone CLI usable
+for diagnostics. The owner confirmed OpenClaw is absent on the integration Mac;
+real host/version/model/bot verification is a documented prerequisite.

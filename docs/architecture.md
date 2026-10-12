@@ -1,78 +1,62 @@
-# Architecture
+# Integrated MVP architecture
 
-## Components
+One repository and one Cloudflare project retain the approved stack:
 
-- **Astro frontend:** static HTML/CSS from `src/` and `public/`, emitted to `dist/`.
-  No framework adapter, SSR, or client JavaScript is needed for the current scaffold.
-- **Worker:** `worker/index.ts` owns `/api` and `/api/*`. It implements the four documented
-  routes with public reads, bearer-protected writes, bounded validation and JSON envelopes.
-- **D1:** the persistence layer, accessed only through the Worker's `DB` binding.
-  A local sentinel binding and publication migration are available; no production database exists.
-- **Shared contracts:** `shared/contracts.ts` defines JSON shapes, discriminated post
-  kinds, input validation, pagination fields, and error codes without database dependencies.
-- **OpenClaw:** existing local agent on the owner's MacBook. Future automation code
-  lives under `automation/` and talks exclusively to the documented HTTP API.
-
-## Data flow
+- **Astro static frontend:** HTML/CSS plus one small browser module. Same-origin public
+  feed reads use the shared validator, opaque cursor pagination and safe DOM text.
+  `/?post=<id>` resolves through `GET /api/posts/:id` inside the existing feed.
+- **Worker:** four publication operations under `/api/posts`, bounded JSON validation,
+  fail-closed bearer writes/deletes, canonicalization and sanitized JSON errors.
+- **D1:** only the Worker accesses storage. Strict schema, immutable identity/time,
+  indexed tuple ordering, atomic uniqueness and permanent soft-deletion tombstones.
+- **Automation:** Node 24 HTTP-only clients and private local retry state. No frontend
+  credentials, database access, CMS, extra server or paid AI service.
+- **OpenClaw templates:** a plugin supervises the deterministic dedicated-bot poller;
+  native command schedules invoke discovery/monthly CLI jobs using a dedicated agent
+  on the owner's existing subscription. The site does not depend on that process.
 
 ```text
-Reader -> one Cloudflare Worker project
-           |-- static route -> Static Assets (Astro dist/)
-           |-- /api/* -> Worker -> D1
+Reader -> Cloudflare Worker project
+          |-- static assets -> Astro dist/
+          |-- /api/* -> Worker -> D1
 
-Public sources -> local OpenClaw daily selection -> authenticated POST /api/posts
-Manual URLs -> separate Telegram bot -> already approved -> same POST API
-Monthly schedule -> local Humanity Changelog -> same POST API with body/references
+Public source feeds -> local collection -> existing OpenClaw selection -> POST API
+Dedicated Telegram bot -> allowlisted human URL -> optional safe metadata -> POST API
+Monthly schedule -> all visible month publications -> existing agent -> POST API
 ```
 
-Discovery should aggregate existing source material, preserve original links and
-provenance, and avoid generating ordinary articles. Telegram submissions skip
-editorial selection because the human has already approved them. The monthly
-changelog has its own body and may have no external URL.
+Worker-first routing applies only to `/api` and `/api/*`; other matching assets can
+be served directly. Static 404 handling remains enabled. Automation writes do not
+trigger builds. Reads remain public; browser code never receives a write token.
 
-## One Cloudflare project
+## Integration behavior
 
-`wrangler.jsonc` combines `main: worker/index.ts` and `assets.directory: ./dist`.
-API patterns run the Worker first. Other matching assets are served directly, avoiding
-unnecessary Worker execution. Non-API fallback requests use `env.ASSETS.fetch` and
-Astro's static `404.html`; the site is not configured as an SPA.
+Both Worker and automation use `normalizePublicationUrl` from shared contracts for
+identity. Known trackers disappear from canonical URLs; content parameters, their
+encoding/order, paths and original submitted URLs are preserved. Fetching uses the
+original URL independently of duplicate identity, checks every DNS address and
+redirect, and pins a checked public address. Metadata HTML is parsed as data only.
+Unsafe targets fail; ordinary metadata failures produce a neutral hostname title
+and keep the original source link. Manual submissions call no editorial model.
 
-The static frontend can later use a small same-origin API client for fresh feed data
-without rebuilding the site after every publication. No client or feed is implemented
-in this phase. Automation writes do not trigger builds or call Astro internals.
+Monthly membership uses the configured IANA timezone and immutable UTC insertion
+timestamps. Public feed pagination includes every eligible publication and excludes
+deletions/changelogs. The digest cites at most 100 selected source references without
+limiting its input to 100. References use readable site permalinks. No searches run.
+Stable monthly source identity and saved drafts protect retries and reruns.
 
-D1 access uses parameterized SQL, database uniqueness constraints, a transactional
-insert/duplicate lookup, and an indexed feed query. `published_at` is the API insertion time, not the external
-source date. The UUID tie-breaker makes equal-timestamp ordering deterministic.
-Soft-deleted content stays in storage and uniqueness indexes but disappears from reads.
+Embeds use allowlisted constructed HTTPS players with sandbox/permissions controls,
+load only after a click, and retain original links if unavailable. Changelog HTML and
+Markdown remain inert text with a small readable block subset.
 
-## Integration boundaries
+## Operational boundary
 
-- Frontend consumes shared types and public JSON reads; it never receives write secrets.
-- Worker validates unknown input, authenticates writes, canonicalizes URLs, detects
-  duplicates, and stores content through the implemented BE-001 handlers.
-- Automation authenticates with a secret stored locally, treats duplicates as successful
-  processing, and does not import backend internals or connect to D1.
-- No OpenClaw configuration, bot registration, AI subscription change, cron trigger,
-  external-content fetch, or production resource is part of this foundation.
+The local configuration retains a sentinel DB with `remote: false`. No production
+resources, deployment, bot registration, live OpenClaw agent changes or schedules
+were performed. OpenClaw is absent on the integration Mac per owner clarification;
+SDK/CLI compatibility is documented and mocked, not claimed as live verification.
+The plugin avoids an additional service manager; the standalone Telegram CLI is a
+manual diagnostic option and must not compete with the plugin's poller.
 
-## Free-tier posture
-
-Use direct static asset serving, small bounded paginated JSON responses, and indexed
-D1 access. No paid bindings, queues, Workers AI, or server-side model calls are added.
-The existing local agent and subscription handle future AI work. Usage and provider
-limits must be reviewed before production; Free compatibility is not a capacity guarantee.
-
-## Official references
-
-Reviewed 2026-10-12:
-
-- [Astro manual setup and runtime requirements](https://docs.astro.build/en/install-and-setup/)
-- [Worker + Static Assets routing](https://developers.cloudflare.com/workers/static-assets/routing/worker-script/)
-- [Static Assets bindings](https://developers.cloudflare.com/workers/static-assets/binding/)
-- [Local Workers development](https://developers.cloudflare.com/workers/local-development/)
-- [Local D1 development](https://developers.cloudflare.com/d1/best-practices/local-development/)
-- [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/)
-
-BE-001 local setup, testing and integration are documented in [the backend guide](../worker/README.md).
-The Foundation configuration and all shared API contracts remain unchanged.
+See [local setup](../README.md), [API](api.md), [deployment](deployment.md), and
+[manual OpenClaw checks](../automation/openclaw/INSTALL.md).

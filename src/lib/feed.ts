@@ -104,6 +104,41 @@ export async function fetchPage(cursor: Cursor | null): Promise<PostsPage> {
   return parsePage(body);
 }
 
+/** Read a permalink through the existing item API, including ordinary API errors. */
+export async function fetchPost(id: string): Promise<Post> {
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+      id,
+    )
+  )
+    throw new FeedError('VALIDATION_ERROR');
+  const response = await fetch(`/api/posts/${id}`, {
+    headers: { Accept: 'application/json' },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(15_000),
+  });
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw new FeedError('INVALID_RESPONSE');
+  }
+  if (!record(body)) throw new FeedError('INVALID_RESPONSE');
+  if (!response.ok || body.ok !== true) {
+    throw new FeedError(
+      record(body.error) && typeof body.error.code === 'string'
+        ? body.error.code
+        : `HTTP_${response.status}`,
+    );
+  }
+  const post = parsePage({
+    ok: true,
+    data: { posts: [body.data], next_cursor: null },
+  }).posts[0];
+  if (!post || post.id !== id) throw new FeedError('INVALID_RESPONSE');
+  return post;
+}
+
 export type FeedStatus =
   'idle' | 'loading' | 'ready' | 'empty' | 'end' | 'error';
 export class FeedSession {

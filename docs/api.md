@@ -1,11 +1,11 @@
 # API contract — version 1
 
-`shared/contracts.ts` is the source of truth for wire types. This document defines
-endpoint semantics for later backend implementation. **Current scaffold:** recognized
-methods on the four reserved routes return `501 NOT_IMPLEMENTED`; unknown API paths
-return JSON `404`, and unsupported methods return JSON `405` with `Allow`. No production
-endpoint, database access, authentication, canonicalization, or cursor logic is implemented.
-The runtime input validator is available separately and is not yet wired into handlers.
+`shared/contracts.ts` is the source of truth for wire types and duplicate URL
+normalization. INT-001 integrates the implemented Worker, static frontend and HTTP
+automation clients. All four documented operations work locally with migrated D1;
+unknown API paths return JSON 404 and unsupported methods return 405 with Allow.
+The wire schema, cursor version, reference limit, authentication and tombstone
+semantics retain version 1. The coordinated tracking normalization change is below.
 
 ## JSON conventions
 
@@ -97,22 +97,22 @@ Unknown providers must use a fallback link, not arbitrary provider metadata:
 `label` may be null. `embed: null` means no requested embed; the original post URL is
 still available as the fallback. Blocked, removed, unsupported, or unavailable embeds
 must display a safe source link instead. Render link text escaped and use
-`rel="noopener noreferrer"` on new-tab external links. Future renderer sandbox/CSP
-rules must be reviewed with the frontend implementation; no embed renderer exists yet.
+`rel="noopener noreferrer"` on new-tab external links. The frontend constructs allowlisted HTTPS players, loads them only on click,
+and uses iframe sandbox and autoplay-denying permissions. Deployment CSP must permit
+only the documented player origins; see the frontend guide.
 
 ## Authentication
 
 Reads are public. POST and DELETE require `Authorization: Bearer <API_WRITE_TOKEN>`
 over HTTPS in production. Local loopback HTTP is allowed for development only.
-The future backend must authenticate before parsing submission content or accessing
-D1, use a timing-safe credential check, and fail closed when the secret is missing
+The backend authenticates before parsing submission content or accessing
+D1, uses a timing-safe credential check, and fails closed when the secret is missing
 (`503 SERVICE_UNAVAILABLE`). Missing or invalid credentials return `401 UNAUTHORIZED`
 with `WWW-Authenticate: Bearer`. Keep tokens out of URLs, logs, Git and frontend
 bundles. No visitor accounts or cookies are required. Same-origin browser reads need
 no permissive CORS; external automation is a server-to-server HTTP client.
 
-The current 501 scaffold rejects all recognized operations, including write attempts
-with or without a token. It is not an authentication implementation.
+The integrated backend implements authentication. No recognized endpoint remains a 501 scaffold.
 
 ## GET /api/posts
 
@@ -147,7 +147,7 @@ curl 'http://127.0.0.1:8787/api/posts?limit=20'
 curl 'http://127.0.0.1:8787/api/posts?limit=20&cursor=RETURNED_CURSOR'
 ```
 
-Example planned `200` response for an empty feed:
+Example `200` response for an empty feed:
 
 ```json
 { "ok": true, "data": { "posts": [], "next_cursor": null } }
@@ -161,6 +161,9 @@ the response below. `next_cursor` is null or the versioned cursor string.
 Returns `200 {ok:true,data:Post}` for a visible post. Malformed UUIDs return
 `400 VALIDATION_ERROR`. Missing or soft-deleted posts return `404 NOT_FOUND`; do not
 expose a tombstone through public reads. Public reads do not require a token.
+The same homepage uses this endpoint for `/?post=<id>` publication permalinks,
+including posts outside its first feed page. Telegram and monthly references link to
+that readable URL rather than to the JSON endpoint.
 
 ```sh
 curl http://127.0.0.1:8787/api/posts/5bdac05a-6f04-4bb9-a7d7-c08530c4fb12
@@ -182,7 +185,7 @@ curl -X POST http://127.0.0.1:8787/api/posts \
 `$API_WRITE_TOKEN` is a local environment value, not a real committed token. Telegram
 origin records the already approved manual submission; no second editorial gate.
 
-Example planned **201 Created** response:
+Example **201 Created** response:
 
 ```json
 {
@@ -237,8 +240,13 @@ Example URL-less changelog input:
 ### Duplicate detection is a successful submission
 
 Normalize `canonical_url ?? url` with the standard URL parser, lowercase host/scheme,
-remove fragments and default ports, and serialize with `URL.toString()`. Preserve
-path case, trailing-slash semantics, query parameters and their order. Do not follow
+remove fragments and default ports, and serialize with `URL.toString()`. Remove case-insensitive `utm_*` parameters and exactly `fbclid`, `gclid`, `dclid`,
+`msclkid`, `mc_cid`, `mc_eid`. Decode parameter names for recognition; preserve all
+other query components, original encoding and ordering. Keep `v`, `list`, `id`, `ref`,
+signature/access parameters and unknown keys. Preserve path case and trailing-slash
+semantics. For example, `?v=abc&utm_source=telegram` and `?v=abc&fbclid=123` share
+identity, while `?v=def` remains distinct. This INT-001 semantic refinement is
+implemented once in `normalizePublicationUrl` and used by backend and automation. Do not follow
 redirects or infer provider-specific equivalence in this phase. If no URL exists,
 canonical_url remains null. The regular response stores the normalized canonical URL
 while preserving the original `url` field.
@@ -309,7 +317,7 @@ curl -X DELETE \
   http://127.0.0.1:8787/api/posts/5bdac05a-6f04-4bb9-a7d7-c08530c4fb12
 ```
 
-Planned `200` response:
+`200` response:
 
 ```json
 {
@@ -336,9 +344,9 @@ Planned `200` response:
 | 429  | RATE_LIMITED           | Temporary throttling; include Retry-After when known                         |
 | 500  | INTERNAL_ERROR         | Unexpected backend failure; no internal detail                               |
 | 503  | SERVICE_UNAVAILABLE    | Backend dependency unavailable or write secret unconfigured                  |
-| 501  | NOT_IMPLEMENTED        | Current reserved endpoint scaffold                                           |
+| 501  | NOT_IMPLEMENTED        | Reserved compatibility error; no integrated route returns it                 |
 
-Validation example (future behavior):
+Validation example:
 
 ```json
 {
@@ -356,7 +364,7 @@ Validation example (future behavior):
 }
 ```
 
-Current scaffold example:
+Historical scaffold example (not returned by the integrated routes):
 
 ```json
 {

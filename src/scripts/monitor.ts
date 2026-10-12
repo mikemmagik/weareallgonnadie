@@ -1,4 +1,4 @@
-import { FeedSession, fetchPage } from '../lib/feed.ts';
+import { FeedSession, FeedError, fetchPage, fetchPost } from '../lib/feed.ts';
 import { renderPost } from '../lib/render.ts';
 
 async function start(): Promise<void> {
@@ -93,6 +93,59 @@ async function start(): Promise<void> {
   window.addEventListener('pagehide', () => observer?.disconnect(), {
     once: true,
   });
+  const target = new URLSearchParams(location.search).get('post');
+  const permalinkState =
+    document.querySelector<HTMLElement>('#permalink-state');
+  const permalinkMessage =
+    document.querySelector<HTMLElement>('#permalink-message');
+  const permalinkRetry =
+    document.querySelector<HTMLButtonElement>('#permalink-retry');
+  let locating = false;
+  const locate = async () => {
+    if (
+      !target ||
+      !permalinkState ||
+      !permalinkMessage ||
+      !permalinkRetry ||
+      locating
+    )
+      return;
+    locating = true;
+    permalinkState.hidden = false;
+    permalinkRetry.hidden = true;
+    permalinkMessage.textContent = 'Locating publication…';
+    try {
+      const post = await fetchPost(target);
+      if (!session.posts.some((p) => p.id === post.id))
+        session.posts.push(post);
+      session.posts.sort(
+        (a, b) =>
+          b.published_at.localeCompare(a.published_at) ||
+          (a.id < b.id ? 1 : a.id > b.id ? -1 : 0),
+      );
+      if (session.status === 'empty') session.status = 'end';
+      update();
+      const card = rendered.get(post.id);
+      if (card) {
+        card.tabIndex = -1;
+        card.classList.add('permalink-target');
+        card.scrollIntoView({ block: 'center' });
+        card.focus({ preventScroll: true });
+      }
+      permalinkState.hidden = true;
+    } catch (error) {
+      const code = error instanceof FeedError ? error.code : 'UNAVAILABLE';
+      const unavailable = ['NOT_FOUND', 'VALIDATION_ERROR'].includes(code);
+      permalinkMessage.textContent = unavailable
+        ? 'This publication is unavailable or has been deleted.'
+        : 'The publication could not be loaded. Please retry.';
+      permalinkRetry.hidden = unavailable;
+    } finally {
+      locating = false;
+    }
+  };
+  permalinkRetry?.addEventListener('click', () => void locate());
   await load();
+  await locate();
 }
 void start();

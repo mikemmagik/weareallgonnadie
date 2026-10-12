@@ -4,6 +4,14 @@ These are installation templates, not an installer. No commands here were execut
 against the user's live setup. Preserve current agents, bot accounts, bindings,
 model subscriptions and schedules. Check project-name collisions before creating anything.
 
+INT-001 assessment: the owner confirmed OpenClaw is not installed on this Mac.
+The adapter flags and plugin entry match current official documentation, and mocked
+CLI/API tests pass, but actual installation SDK/runtime compatibility remains unverified.
+Keep the plugin as the primary lifecycle owner for Telegram: its child poller is an
+internal process supervised by the existing Gateway, requiring no extra service
+manager or AI subscription. Manual submissions call no model. Standalone CLI polling
+is an optional diagnostic mode; never run both owners for the same bot.
+
 ## 1. Check installed compatibility
 
 At integration time:
@@ -79,7 +87,7 @@ After review and compatibility checks, link the complete checkout (the plugin de
 on the poller elsewhere under automation; do not copy its subdirectory alone):
 
 ```sh
-openclaw plugins install --link /absolute/path/waagd-automation/automation/openclaw/plugin
+openclaw plugins install --link /absolute/path/waagd-integration/automation/openclaw/plugin
 openclaw plugins enable waagd-telegram
 openclaw plugins inspect waagd-telegram --runtime --json
 ```
@@ -100,9 +108,9 @@ state and network, then restart the project service. No current agents are modif
 ## 4. Native scheduling templates
 
 Daily discovery: 09:00. Monthly: 09:15 on day 1, Asia/Bangkok. Monthly selects the
-previous local calendar month but source membership uses UTC insertion timestamps.
-At 09:15 Bangkok the previous UTC month has ended. For other timezones pick a first-day
-time after the UTC month ends. The MacBook/Gateway must remain awake and online.
+previous calendar month and source membership in the configured IANA timezone.
+UTC insertion timestamps are converted into that timezone for membership; the
+09:15 first-day run occurs after the local month has ended. The MacBook/Gateway must remain awake and online.
 
 Replace absolute placeholders after creating a private environment file outside
 Git and the agent workspace. Node's env-file argument contains a path, not credentials.
@@ -110,13 +118,13 @@ Git and the agent workspace. Node's env-file argument contains a path, not crede
 ```sh
 openclaw automations create '0 9 * * *' \
   --name waagd-daily --tz Asia/Bangkok \
-  --command-argv '["/absolute/path/node","--env-file=/absolute/private/waagd.env","/absolute/path/waagd-automation/automation/cli.ts","daily"]' \
-  --command-cwd /absolute/path/waagd-automation --timeout-seconds 600
+  --command-argv '["/absolute/path/node","--env-file=/absolute/private/waagd.env","/absolute/path/waagd-integration/automation/cli.ts","daily"]' \
+  --command-cwd /absolute/path/waagd-integration --timeout-seconds 600
 
 openclaw automations create '15 9 1 * *' \
   --name waagd-monthly --tz Asia/Bangkok \
-  --command-argv '["/absolute/path/node","--env-file=/absolute/private/waagd.env","/absolute/path/waagd-automation/automation/cli.ts","monthly"]' \
-  --command-cwd /absolute/path/waagd-automation --timeout-seconds 600
+  --command-argv '["/absolute/path/node","--env-file=/absolute/private/waagd.env","/absolute/path/waagd-integration/automation/cli.ts","monthly"]' \
+  --command-cwd /absolute/path/waagd-integration --timeout-seconds 600
 ```
 
 Command jobs provide scheduling; the script invokes the dedicated existing agent
@@ -131,8 +139,9 @@ scheduler catch-up semantics. Inspect failure summaries and stale locks after de
 
 ## 5. Remaining manual integration checks
 
-1. Backend implements authentication, all routes, tombstone duplicates and cursor
-   pagination. Foundation 501 remains a blocker for real publication.
+1. Backend, migrated D1, authentication, tombstone duplicates, cursor pagination and
+   frontend permalinks must be available at the configured API origin. INT-001 verifies
+   this locally; production provisioning remains a manual prerequisite.
 2. Dedicated agent returns valid JSON using the existing subscription, with tools
    disabled. Check envelope compatibility, translation, citations and factual restraint.
 3. Private environment/state are accessible only to service owner; no production secrets

@@ -739,3 +739,12 @@ footer {
     animation: none !important;
   }
 }
+
+.permalink-target {
+  outline: 2px solid var(--accent, #9effb0);
+  outline-offset: 4px;
+  scroll-margin-block: 2rem;
+}
+#permalink-state {
+  margin-block: 1rem;
+}

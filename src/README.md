@@ -13,8 +13,7 @@ DEV-only import from production; the build smoke test verifies no mock publicati
 or mock browser assets are emitted. The unmodified homepage always requests the API.
 
 Run `npm run dev:full` to build the frontend and serve it alongside the local Worker
-at `http://127.0.0.1:8787`. The existing Worker returns `501 NOT_IMPLEMENTED`, which
-the frontend presents honestly. After backend integration, no frontend endpoint
+at `http://127.0.0.1:8787`. The integrated Worker supplies the real feed. No frontend endpoint
 configuration is needed: public reads go to same-origin `/api/posts?limit=20`, then
 include URL-encoded opaque `cursor` values returned as `data.next_cursor`. No write
 token belongs in the frontend. API calls time out after 15 seconds and allow manual
@@ -26,6 +25,11 @@ responses, omits soft-deleted posts, deduplicates IDs, and keeps descending
 `(published_at, id)` order. `published_at` is the feed insertion date; the current
 contract has no separate original publication date. Empty/missing titles receive a
 readable fallback; nullable previews, body, and embeds are supported.
+
+Publication permalinks use `/?post=<id>` and the existing item endpoint. The result
+is inserted once into the current feed, sorted without advancing its pagination
+cursor, highlighted and focused. Missing/deleted IDs show a readable status; transient
+failures offer a dedicated retry. Telegram and monthly source references use this URL.
 
 ## Media and rendering
 
@@ -50,7 +54,7 @@ For future hosting security headers, allow only these frame origins if enforcing
 CSP: `https://www.youtube-nocookie.com`, `https://www.tiktok.com`, and
 `https://www.instagram.com`. Preview images may come from public HTTP(S) sources.
 Any broader deployment CSP and response headers belong to coordinated Worker work.
-No shared configuration, API contract, backend, or automation files changed.
+INT-001 preserves wire fields and the renderers while integrating permalink reads.
 
 ## Validation
 
@@ -72,7 +76,7 @@ fictional development publications. Make that output directory before running.
 `npm run build` is local only: Astro static output plus Wrangler **dry-run**.
 Deployment is not part of FE-001.
 
-## FE-001 delivery
+## Historical FE-001 delivery
 
 Changed files:
 

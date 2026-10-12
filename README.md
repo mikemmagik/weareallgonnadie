@@ -1,141 +1,118 @@
 # We Are All Gonna Die
 
-Technical foundation for a minimalist, dark-humor content aggregator about AI,
-automation, existential threats, disasters, pandemics, and technological absurdity.
-Existing content will appear in one chronological feed. The local OpenClaw agent
-will eventually discover content, accept already approved Telegram URLs, and submit
-a monthly Humanity Changelog through the API.
+Integrated local MVP: one newest-first feed of existing news, videos, memes and
+monthly Humanity Changelogs. Astro builds static assets; a Cloudflare Worker serves
+public reads and authenticated writes against D1. Local automation talks only to
+that HTTP API. The site runs independently of automation or OpenClaw.
 
-**Status:** Foundation plus BE-001 backend. All four API endpoints, authenticated
-writes, local D1 storage, atomic duplicate handling, soft deletion and cursor pagination
-are implemented. The homepage remains a frontend placeholder. Discovery, Telegram
-integration and changelog generation belong to Automation. See [backend setup and
-integration](worker/README.md).
+**Status:** INT-001 on `integration/mvp`. Backend, frontend and automation are merged.
+No production deployment, real bot or OpenClaw configuration was created.
 
-## Requirements
+## Requirements and local startup
 
-- Node.js **24.x** (use `.nvmrc`); npm **11 or newer**.
-- Git. No Cloudflare account, credentials, AI key, or Telegram bot is needed locally.
-- npm registry access for initial dependency installation.
-
-Node 24 is the deliberately supported even-numbered runtime for this repository.
-Dependencies are pinned in `package.json` and `package-lock.json`.
-
-## Install
+Node **24.x**, npm **11+**, Git and registry access for dependency installation.
+Cloudflare credentials, a real bot and an AI service are unnecessary for local tests.
 
 ```sh
-cd /Users/mikemmagik/Documents/weareallgonnadie
+cd /Users/mikemmagik/Documents/waagd-integration
 npm ci
-```
-
-## Local development
-
-```sh
-npm run dev
-```
-
-Astro runs at <http://localhost:4321> with hot reload. This previews only the static
-frontend; `/api/*` is owned by the Worker, not Astro.
-
-```sh
+npm run db:init
+cp .dev.vars.example .dev.vars
+# Replace the placeholder in .dev.vars with a private local write token.
 npm run dev:full
 ```
 
-Builds the frontend, then serves assets and the API together at
-<http://127.0.0.1:8787> using local Workers/D1 simulation. Rebuild the frontend after
-editing it. If Wrangler reports that the assets watcher hit a platform limit,
-rebuild and restart the Worker to see asset changes; this warning occurred in the
-validation sandbox. Worker changes normally reload automatically. `npm run dev:worker` starts only
-the Worker and expects an existing `dist/` from `npm run build:frontend`.
+Open <http://127.0.0.1:8787>. The initial feed is empty. INT-001 currently leaves a
+preview running at <http://127.0.0.1:8797> because an existing foundation server owns 8787. To use that alternate port after a build:
 
 ```sh
-curl -i http://127.0.0.1:8787/api/posts
+npx wrangler dev --local --ip 127.0.0.1 --port 8797 --inspector-port 0
 ```
 
-Apply the database migration first with `npx wrangler d1 migrations apply DB --local`.
-GET returns the public feed as JSON 200. Copy `.dev.vars.example` to `.dev.vars` and
-replace the placeholder with a local-only secret to enable authenticated writes.
-No real Cloudflare database is required. The example's scaffold comments are historical;
-see [backend instructions](worker/README.md) for current behavior.
-
-## Build and validation
+Public GETs need no token;
+POST/DELETE require `Authorization: Bearer <API_WRITE_TOKEN>`. Never commit `.dev.vars`
+or expose its value through browser assets. An absent token fails closed with 503.
+The local DB uses a sentinel ID and all migrations explicitly use `--local`.
 
 ```sh
-npm run typecheck
-npm run lint
-npm run format:check
-npm test
-npm run test:smoke
-node --test tests/backend.integration.test.ts
-# Foundation checks as one command (integration suite remains separate):
+curl 'http://127.0.0.1:8787/api/posts'
+```
+
+`npm run dev:full` builds and serves frontend + API. Rebuild/restart after frontend
+edits; Worker edits normally reload automatically. `npm run dev:worker` expects an
+existing `dist/`. `npm run dev` on port 4321 serves Astro only; `/?demo=1` there is
+an explicitly fictional development preview. Real publication reads require port 8787. Development fixtures are excluded from production builds.
+
+Publication links use `/?post=<uuid>` on this same homepage. They fetch the existing
+item endpoint, focus the requested publication even beyond the first feed page,
+and report missing/deleted publications while keeping the feed available.
+
+## Verification
+
+```sh
+npm ci
 npm run validate
+npm run build
 ```
 
-- `typecheck`: Astro templates/frontend/shared code, separate Worker environment,
-  and test TypeScript. Runtime types stay outside browser configuration.
-- `lint`: basic TypeScript/JavaScript ESLint checks. Astro templates use `astro check`.
-- `format:check` / `format`: Prettier checks / fixes, including Astro and documentation.
-- `test`: Node's built-in runner with native TypeScript stripping; no test framework.
-- `test:smoke`: removes stale build outputs, runs both real build commands without
-  Cloudflare credentials, checks static HTML with no client scripts and a Worker bundle.
+Validation includes Astro/TypeScript for all three components, ESLint, Prettier,
+contract/Worker/frontend/automation unit tests, a credential-free real build smoke
+test, and real local D1/Worker integration tests with isolated temporary storage.
+No command deploys. `build:worker` is Wrangler's dry-run bundler.
+
+Additional browser verification uses the [Playwright CLI](https://github.com/microsoft/playwright-cli)
+with a Chromium browser available locally:
 
 ```sh
-npm run build
-npm run preview
+mkdir -p output/playwright
+# In another terminal, start Astro:
+npm run dev -- --host 127.0.0.1
+# Open a CLI session named doom; use --config if needed for your browser installation:
+npx --yes --package @playwright/cli playwright-cli -s=doom open http://127.0.0.1:4321
+npm run test:browser
+# Reuses that browser session against a real temporary local Worker/D1 + built assets:
+WAAGD_BROWSER_TESTS=1 npm run test:backend
 ```
 
-`build:frontend` creates `dist/`. `build:worker` uses Wrangler's **dry-run** bundler
-and creates `build/worker/`; run it after the frontend build. `build` runs both.
-No build command uploads assets, deploys a Worker, or creates infrastructure.
-`preview` serves the static build only.
+If Chrome is unavailable but Playwright Chromium is installed, a private CLI config
+can use `{"browser":{"browserName":"chromium","launchOptions":{"channel":"","headless":true}}}`.
+Pass its path with `open --config /absolute/path/config.json`. Browser scripts fail
+on failed assertions. Screenshots and browser session files are ignored by Git.
 
-## Repository structure
+## Automation and manual setup
 
-```text
-src/
-  pages/                   Static placeholder homepage and 404
-  components/              Reserved frontend components
-  styles/                  Minimal scaffold stylesheet
-  env.d.ts                 Astro type references
-public/                    Public build assets (no secrets)
-worker/
-  index.ts                 API routing and asset fallback
-  env.ts                   Explicit ASSETS, DB, write-token bindings
-  tsconfig.json            Worker-only type environment
-shared/
-  contracts.ts             Post/request/response types and input validation
-db/
-  migrations/              Publication schema, indexes and constraints
-  README.md                Local database setup and constraints
-automation/
-  discovery/               Reserved
-  telegram/                Reserved
-  changelog/               Reserved
-  README.md                API-only integration boundary
-tests/                     Contract, routing, and build smoke tests
-docs/
-  architecture.md
-  api.md
-  decisions.md
-  deployment.md
-  handoff.md
-AGENTS.md                  Future agent instructions and directory ownership
-README.md
-package.json / package-lock.json
-astro.config.mjs
-wrangler.jsonc
-eslint.config.mjs
-.prettierrc.json / .prettierignore
-.gitignore / .npmrc / .nvmrc / .dev.vars.example
-tsconfig.json
-```
+See [automation](automation/README.md) for environment variables, commands, retry
+state and source configuration. Supply API origin/write token and an absolute private
+state directory outside the repository. Telegram additionally needs a dedicated bot
+token and numeric allowed user IDs. Manual URLs skip editorial classification and
+publish immediately with available metadata or a neutral hostname title. Unsafe
+local/private targets remain rejected.
 
-Empty reserved directories contain `.gitkeep` so Git preserves the approved layout.
-One repository, no nested packages or infrastructure frameworks.
+[OpenClaw setup](automation/openclaw/INSTALL.md) describes the plugin supervising the
+project bot, dedicated editorial agent, existing subscription and native schedules.
+OpenClaw is not installed on this Mac during INT-001; version compatibility and real
+model/bot behavior require manual checks on the installation host. No extra AI
+subscription or independently managed Telegram service is required. Discovery and
+monthly CLI commands invoke the existing agent; Telegram invokes no model.
 
-## Documentation
+Monthly runs paginate all visible publications in the selected calendar month using
+`WAAGD_TIMEZONE` (default Asia/Bangkok), excluding deleted posts and other changelogs.
+All eligible source publications reach generation; the existing limit of 100 applies
+only to cited references. A stable monthly identity makes reruns idempotent.
 
-Read [architecture](docs/architecture.md), [API contract](docs/api.md),
-[decisions](docs/decisions.md), [deployment preparation](docs/deployment.md), and
-[agent handoff](docs/handoff.md). `shared/contracts.ts` and `docs/api.md` must change
-only together under explicit project-owner approval. See `AGENTS.md`.
+## Layout and guides
+
+- `src/`, `public/`: static frontend, safe renderers and optional development fixtures.
+- `worker/`: routing, auth, cursor and D1 persistence; [backend guide](worker/README.md).
+- `shared/contracts.ts`, [API](docs/api.md): common wire shapes and normalization.
+- `db/migrations/`: strict publication schema; [database guide](db/README.md).
+- `automation/`: HTTP client, private retry state, discovery, Telegram and changelog.
+- `tests/`, `automation/tests/`: unit, browser, build and local integration verification.
+- [Architecture](docs/architecture.md), [decisions](docs/decisions.md),
+  [deployment prerequisites](docs/deployment.md), [integration handoff](docs/handoff.md).
+
+Known limits: provider playback depends on upstream policy; text/Markdown uses a safe
+small subset; source parsers are lightweight; pagination is not snapshot isolation.
+Existing pre-integration local databases may retain old tracking-sensitive canonical
+keys: initialize a fresh test database or review a separate data reconciliation before
+reusing historical records. No production data exists in the supplied foundation.

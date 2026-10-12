@@ -1,7 +1,4 @@
-/** Contract v1 deliberately preserves path, query content, and query ordering. */
+import { normalizePublicationUrl } from '../shared/contracts.ts';
 export function canonicalizeUrl(value: string | null): string | null {
-  if (value === null) return null;
-  const url = new URL(value);
-  url.hash = '';
-  return url.toString();
+  return value === null ? null : normalizePublicationUrl(value);
 }

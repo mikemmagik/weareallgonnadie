@@ -12,6 +12,7 @@ import {
   isPublicAddress,
   retryRequest,
   RequestFailure,
+  UnsafeUrlError,
 } from '../core/http.ts';
 import type { Http } from '../core/http.ts';
 import {
@@ -25,7 +26,7 @@ import { telegramCall, pollTelegram } from '../telegram/poll.ts';
 import { parseFeed, collect, collectSource } from '../discovery/sources.ts';
 import type { Source } from '../discovery/sources.ts';
 import { runDiscovery } from '../discovery/run.ts';
-import { previousMonth, runChangelog } from '../changelog/run.ts';
+import { previousMonth, runChangelog, monthStart } from '../changelog/run.ts';
 import { parseAgentOutput, OpenClawAI } from '../openclaw/ai.ts';
 import { configuration } from '../config.ts';
 import type { CreatePostInput, Post } from '../../shared/contracts.ts';
@@ -279,20 +280,19 @@ test('recognized embeds and unsupported paths degrade to contract-valid links', 
     assert.equal(validateCreatePostInput(value).valid, true);
   }
 });
-test('accessible pages publish even without embed or metadata; blocked pages fail', async () => {
+test('manual URLs publish with neutral fallback when metadata is unavailable', async () => {
   const result = await prepareUrl(
     'https://example.com/public-video',
     async () => new Response('', { headers: { 'Content-Type': 'text/html' } }),
   );
   assert.equal(result.embed?.kind, 'link');
   assert.equal(result.title, 'example.com');
-  await assert.rejects(
-    prepareUrl(
-      'https://example.com/private',
-      async () => new Response('', { status: 403 }),
-    ),
-    RequestFailure,
+  const fallback = await prepareUrl(
+    'https://example.com/private',
+    async () => new Response('', { status: 403 }),
   );
+  assert.equal(fallback.title, 'example.com');
+  assert.equal(fallback.url, 'https://example.com/private');
 });
 test('normalization preserves query ordering, path case and trailing slash', () => {
   assert.equal(
@@ -653,7 +653,7 @@ test('monthly generation uses only visible previous-month posts, exact citations
   assert.equal(submitted?.url, null);
   assert.equal(
     submitted?.references[0]?.url,
-    `https://site.example/api/posts/${ID}`,
+    `https://site.example/?post=${ID}`,
   );
   assert.match(submitted!.references[0]!.title!, new RegExp(ID));
   assert.deepEqual(await runChangelog(publisher, ai, '2026-09'), {
@@ -1012,4 +1012,106 @@ test('request cancellation stops retries immediately', async () => {
     ),
   );
   assert.equal(calls, 1);
+});
+
+test('manual metadata fallback never permits a private target, including unsafe redirects', async (t) => {
+  const publisher = await fixture(t, async () => {
+    assert.fail('No publication for unsafe target.');
+  });
+  for (const url of [
+    'http://127.1/',
+    'http://2130706433/',
+    'http://169.254.169.254/latest/meta-data/',
+    'http://[::ffff:127.0.0.1]/',
+    'http://localhost./',
+    'http://box.local/',
+    'http://10.0.0.1/',
+  ]) {
+    let fetched = false;
+    const reply = await handleUpdate(
+      update(url),
+      new Set(['123']),
+      publisher,
+      async () => {
+        fetched = true;
+        return new Response('');
+      },
+    );
+    assert.match(reply!.text, /^FAILED/);
+    assert.equal(fetched, false, url);
+  }
+  await assert.rejects(
+    prepareUrl('https://example.com/redirect', async () => {
+      throw new UnsafeUrlError();
+    }),
+    UnsafeUrlError,
+  );
+  const fallback = await prepareUrl(
+    'https://youtu.be/abcdefghijk',
+    async () => new Response('', { status: 404 }),
+  );
+  assert.equal(fallback.title, 'youtu.be');
+  assert.equal(fallback.type, 'video');
+  assert.equal(fallback.url, 'https://youtu.be/abcdefghijk');
+});
+
+test('monthly input includes more than 100 publications and respects timezone calendar boundaries', async (t) => {
+  assert.equal(
+    monthStart('2026-09', 'Asia/Bangkok').toISOString(),
+    '2026-08-31T17:00:00.000Z',
+  );
+  assert.equal(
+    monthStart('2026-03', 'America/New_York').toISOString(),
+    '2026-03-01T05:00:00.000Z',
+  );
+  const rows = Array.from({ length: 155 }, (_, i) => ({
+    ...post(),
+    id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+  }));
+  const boundary = {
+    ...post(),
+    id: OTHER_ID,
+    published_at: '2026-08-31T17:00:00.000Z',
+  };
+  const excluded = {
+    ...post(),
+    id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    published_at: '2026-09-30T17:00:00.000Z',
+  };
+  rows.push(boundary, excluded);
+  rows.sort(
+    (a, b) =>
+      b.published_at.localeCompare(a.published_at) || b.id.localeCompare(a.id),
+  );
+  let pageCalls = 0;
+  const publisher = await fixture(t, async (url, init) => {
+    if (init?.method === 'POST') return backend()(url, init);
+    pageCalls++;
+    const cursor = new URL(url).searchParams.get('cursor');
+    return json({
+      ok: true,
+      data: {
+        posts: cursor ? rows.slice(100) : rows.slice(0, 100),
+        next_cursor: cursor ? null : 'page-two',
+      },
+    });
+  });
+  await runChangelog(
+    publisher,
+    {
+      run: async (_task, data) => {
+        const input = data as { posts: { id: string }[]; timezone: string };
+        assert.equal(input.posts.length, 156);
+        assert.equal(input.timezone, 'Asia/Bangkok');
+        assert.ok(input.posts.some((p) => p.id === OTHER_ID));
+        assert.ok(!input.posts.some((p) => p.id === excluded.id));
+        return {
+          body: `[ADDED] [post:${OTHER_ID}] ${'Supported satire '.repeat(80)}`,
+          publication_ids: [OTHER_ID],
+        };
+      },
+    },
+    '2026-09',
+  );
+  assert.equal(pageCalls, 2);
 });
