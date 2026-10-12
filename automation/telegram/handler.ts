@@ -2,6 +2,9 @@ import type { Publisher } from '../core/state.ts';
 import { record, UUID } from '../core/api.ts';
 import { prepareUrl } from '../core/metadata.ts';
 import type { Http } from '../core/http.ts';
+import { RequestFailure, UnsafeUrlError } from '../core/http.ts';
+import { StateError, payloadKey } from '../core/state.ts';
+import type { CreatePostInput } from '../../shared/contracts.ts';
 
 export interface Reply {
   chatId: number;
@@ -35,6 +38,7 @@ export async function handleUpdate(
         text: 'FAILED: Send one public URL or /delete <post_id>.',
       };
     const text = message.text.trim();
+    let payload: CreatePostInput | undefined;
     try {
       if (/^\/delete(?:\s|$)/.test(text)) {
         const id = text.split(/\s+/)[1];
@@ -44,16 +48,37 @@ export async function handleUpdate(
         return { chatId, text: `DELETED\nPublication ID: ${result.id}` };
       }
       // The human approved the URL. This path never calls the editorial AI.
-      const payload = await prepareUrl(text, http);
+      payload = await prepareUrl(text, http);
       const result = await publisher.submit(payload);
       return {
         chatId,
         text: `${result.outcome === 'created' ? 'PUBLISHED' : 'ALREADY EXISTS'}\n${publisher.api.siteUrl(result.post.id)}\nPublication ID: ${result.post.id}${result.post.deleted_at ? '\nPreviously deleted; remains deleted.' : ''}`,
       };
-    } catch {
+    } catch (error) {
+      let saved = false;
+      if (payload) {
+        try {
+          saved =
+            (await publisher.state.read(
+              `outgoing-${payloadKey(payload)}.json`,
+            )) !== null;
+        } catch {
+          /* Never claim persistence when state cannot be verified. */
+        }
+      }
+      const reason =
+        error instanceof StateError
+          ? error.message
+          : error instanceof UnsafeUrlError
+            ? 'URL must target a safe public publication.'
+            : !payload &&
+                error instanceof RequestFailure &&
+                [404, 410].includes(error.status)
+              ? `Original publication is missing (HTTP ${error.status}); nothing was published.`
+              : 'Publication or deletion could not be completed.';
       return {
         chatId,
-        text: 'FAILED: Publication or deletion could not be completed. Temporary publication failures are saved locally for retry.',
+        text: `FAILED: ${reason}${saved ? ' Publication payload is saved locally for retry; exhausted retries require manual review.' : ' No publication payload was saved for retry.'}`,
       };
     }
   } catch {

@@ -299,10 +299,18 @@ them as failures. URL-less changelogs should use a stable monthly source_item_id
 without either duplicate key repeated submissions cannot be recognized as duplicates.
 
 A failed submission has `ok: false` and an appropriate 4xx/5xx error. No successful
-publication is implied. Retry transport failures, `429`, `500` and `503` with bounded
+publication is implied. Automation retries transport failures and `408`, `429`,
+`500`, `502`, `503`, `504` with bounded
 backoff and jitter, respecting Retry-After when present; the same keys protect against
 an uncertain previously committed write. Do not automatically retry validation/auth
 errors or `501`; fix the input/configuration or wait for implementation.
+
+FIX-001 does not change contract v1 URL acceptance or provider metadata shapes.
+Automation uses a checked resolved URL for TikTok embed metadata while preserving
+original `url` and canonical identity. Ingestion/rendering suppress previews that
+fail the public HTTPS preview policy; API URL validation alone does not authorize
+fetching or rendering a private image target. Confirmed original 404/410 stops manual
+preparation before POST; uncertainty/optional metadata failure retains human approval.
 
 ## DELETE /api/posts/:id
 

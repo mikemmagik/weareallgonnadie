@@ -66,7 +66,7 @@ export async function retryRequest(
       continue;
     }
     if (response.ok) return response;
-    const retryable = [429, 500, 503].includes(response.status);
+    const retryable = [408, 429, 500, 502, 503, 504].includes(response.status);
     const header = response.headers.get('retry-after');
     const delay =
       header === null
@@ -116,15 +116,35 @@ export function isPublicAddress(address: string): boolean {
 export function normalizeUrl(value: string): string {
   return normalizePublicationUrl(value);
 }
+/** DNS cannot be cancelled by lookup, but waiting for it is bounded by the same signal. */
+async function withinDeadline<T>(
+  work: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  signal.throwIfAborted();
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => {
+      signal.removeEventListener('abort', abort);
+      reject(signal.reason);
+    };
+    signal.addEventListener('abort', abort, { once: true });
+    work
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener('abort', abort));
+  });
+}
 /** DNS pinned per request; every redirect is independently checked, no cookies or auth. */
 export const publicHttp: Http = async (input, init = {}) => {
+  const signal = init.signal ?? AbortSignal.timeout(15_000);
   let url = publicUrl(input).toString();
   for (let redirects = 0; redirects <= 4; redirects++) {
+    signal.throwIfAborted();
     const target = publicUrl(url);
     const host = target.hostname.replace(/^\[|\]$/g, '');
     const addresses = isIP(host)
       ? [{ address: host, family: isIP(host) }]
-      : await lookup(host, { all: true });
+      : await withinDeadline(lookup(host, { all: true }), signal);
+    signal.throwIfAborted();
     if (!addresses.length || addresses.some((a) => !isPublicAddress(a.address)))
       throw new UnsafeUrlError();
     const pinned = addresses[0]!;
@@ -138,7 +158,7 @@ export const publicHttp: Http = async (input, init = {}) => {
             Accept: 'text/html,application/xml,application/json,text/xml',
           },
           family: pinned.family,
-          signal: init.signal ?? AbortSignal.timeout(15_000),
+          signal,
           lookup: (_host, _options, callback) =>
             callback(null, pinned.address, pinned.family),
         },
@@ -194,6 +214,8 @@ export const publicHttp: Http = async (input, init = {}) => {
       url = publicUrl(new URL(location, url).toString()).toString();
       continue;
     }
+    // Node's buffered Response has no URL; preserve the destination verified above.
+    Object.defineProperty(response, 'url', { value: url });
     return response;
   }
   throw new Error('Too many redirects.');

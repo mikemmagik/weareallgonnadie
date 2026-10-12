@@ -1,4 +1,5 @@
 import type { Post } from '../../shared/contracts.ts';
+import { publicPreviewUrl } from '../../shared/preview.ts';
 import {
   changelogBlocks,
   playerFor,
@@ -28,7 +29,7 @@ function externalLink(
   return link;
 }
 function imageFor(post: Post): HTMLImageElement | null {
-  const url = safeUrl(post.preview?.image_url);
+  const url = publicPreviewUrl(post.preview?.image_url);
   if (!url) return null;
   const image = element('img', 'preview-image');
   image.src = url;

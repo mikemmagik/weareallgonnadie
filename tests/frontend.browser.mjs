@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 
-export async function verifyMonitor(page) {
-  const base = 'http://127.0.0.1:4321';
+export async function verifyMonitor(page, base = 'http://127.0.0.1:4321') {
   const results = [];
   const check = (condition, message) => {
     if (!condition) throw new Error(message);
@@ -29,7 +28,10 @@ export async function verifyMonitor(page) {
     post(1, {
       title: '<img src=x onerror=alert(1)>',
       body: '<script>window.pwned=true</script>',
-      preview: { image_url: `${base}/src/dev/robot.svg`, alt_text: 'Robots' },
+      preview: {
+        image_url: 'https://images.example/robot.svg',
+        alt_text: 'Robots',
+      },
     }),
     post(2, {
       type: 'video',
@@ -43,7 +45,7 @@ export async function verifyMonitor(page) {
     post(3, {
       type: 'meme',
       preview: {
-        image_url: `${base}/src/dev/meme.svg`,
+        image_url: 'https://images.example/meme.svg',
         alt_text: 'Meme without cropping',
       },
     }),
@@ -107,7 +109,7 @@ export async function verifyMonitor(page) {
               post(7, {
                 type: 'meme',
                 preview: {
-                  image_url: `${base}/broken-image.svg`,
+                  image_url: 'https://images.example/broken-image.svg',
                   alt_text: null,
                 },
               }),
@@ -124,6 +126,12 @@ export async function verifyMonitor(page) {
   });
   await page.route('**/broken-image.svg', (route) =>
     route.fulfill({ status: 404, body: '' }),
+  );
+  await page.route('https://images.example/{robot,meme}.svg', (route) =>
+    route.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450"><rect width="800" height="450" fill="#234"/></svg>',
+    }),
   );
   await page.route('https://www.youtube-nocookie.com/**', (route) =>
     route.abort(),
@@ -299,9 +307,9 @@ if (import.meta.main) {
       '--package',
       '@playwright/cli',
       'playwright-cli',
-      '-s=doom',
+      `-s=${process.env.WAAGD_BROWSER_SESSION ?? 'doom'}`,
       'run-code',
-      verifyMonitor.toString(),
+      `async page => (${verifyMonitor.toString()})(page, ${JSON.stringify(process.env.WAAGD_FRONTEND_BASE ?? 'http://127.0.0.1:4321')})`,
     ],
     { encoding: 'utf8', maxBuffer: 2_000_000 },
   );

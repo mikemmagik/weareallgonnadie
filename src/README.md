@@ -36,7 +36,9 @@ failures offer a dedicated retry. Telegram and monthly source references use thi
 YouTube, TikTok, and Instagram players use validated provider-specific paths and
 constructed HTTPS iframe sources. They load only after an explicit click, use a
 sandbox, deny autoplay via Permissions Policy, and retain an original-source link.
-Reddit, short URLs, invalid provider paths, and link-only metadata use safe fallback
+Verified TikTok short-link redirects carry canonical video metadata while the original
+submitted URL remains clickable. Reddit, unresolved short URLs, invalid provider paths,
+and link-only metadata use safe fallback
 cards. Provider availability, consent screens, removals, and browser blocking can
 still prevent playback. Browser tests stub player requests and verify loading and
 fallback behavior; real provider playback requires valid public publications.
@@ -50,10 +52,15 @@ source links. Full Markdown is intentionally unsupported: changelogs support
 breaks. Inline markup and HTML are rendered as inert text. Source/reference links
 accept only HTTP(S) and open with `noopener noreferrer`.
 
-For future hosting security headers, allow only these frame origins if enforcing
-CSP: `https://www.youtube-nocookie.com`, `https://www.tiktok.com`, and
-`https://www.instagram.com`. Preview images may come from public HTTP(S) sources.
-Any broader deployment CSP and response headers belong to coordinated Worker work.
+FIX-001 prepares CSP in `public/_headers` and `worker/security.ts`, permitting only
+these frame origins: `https://www.youtube-nocookie.com`, `https://www.tiktok.com`, and
+`https://www.instagram.com`. Scripts/styles and API reads stay same-origin; inline
+scripts and arbitrary third-party scripts are denied. Preview images require public
+HTTPS URL syntax, default ports, no credentials, and no local/reserved address/name.
+Unsafe previews render without an image, including old API records. Direct browser
+image DNS/redirect destinations cannot be pinned by this renderer; see the remediation
+handoff for that remaining limit. Local development illustrations targeting loopback
+are consequently suppressed; browser fixture images use mocked public HTTPS URLs.
 INT-001 preserves wire fields and the renderers while integrating permalink reads.
 
 ## Validation

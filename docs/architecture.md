@@ -36,7 +36,7 @@ identity. Known trackers disappear from canonical URLs; content parameters, thei
 encoding/order, paths and original submitted URLs are preserved. Fetching uses the
 original URL independently of duplicate identity, checks every DNS address and
 redirect, and pins a checked public address. Metadata HTML is parsed as data only.
-Unsafe targets fail; ordinary metadata failures produce a neutral hostname title
+Unsafe targets and confirmed original HTTP 404/410 fail; uncertain metadata failures produce a neutral hostname title
 and keep the original source link. Manual submissions call no editorial model.
 
 Monthly membership uses the configured IANA timezone and immutable UTC insertion
@@ -48,6 +48,14 @@ Stable monthly source identity and saved drafts protect retries and reruns.
 Embeds use allowlisted constructed HTTPS players with sandbox/permissions controls,
 load only after a click, and retain original links if unavailable. Changelog HTML and
 Markdown remain inert text with a small readable block subset.
+
+FIX-001 preserves the verified final URL inside the local HTTP boundary for provider
+recognition, without changing post URL/canonical identity or the wire schema. DNS,
+redirects and sockets share a per-request deadline; all answers remain checked and
+one public address pinned. State operations require owned 0700 directories and owned
+0600 regular files, rejecting user-created symlinks. Gateway failures retain retry
+metadata and payloads. Static assets use `_headers`; Worker responses explicitly
+attach the same policy. See [deployment](deployment.md) for CSP and remaining limits.
 
 ## Operational boundary
 

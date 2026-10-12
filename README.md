@@ -5,7 +5,8 @@ monthly Humanity Changelogs. Astro builds static assets; a Cloudflare Worker ser
 public reads and authenticated writes against D1. Local automation talks only to
 that HTTP API. The site runs independently of automation or OpenClaw.
 
-**Status:** INT-001 on `integration/mvp`. Backend, frontend and automation are merged.
+**Status:** FIX-001 on `fix/qa-001`; see [remediation handoff](docs/fix-001-handoff.md).
+Backend, frontend and automation retain the integrated MVP.
 No production deployment, real bot or OpenClaw configuration was created.
 
 ## Requirements and local startup
@@ -85,7 +86,8 @@ See [automation](automation/README.md) for environment variables, commands, retr
 state and source configuration. Supply API origin/write token and an absolute private
 state directory outside the repository. Telegram additionally needs a dedicated bot
 token and numeric allowed user IDs. Manual URLs skip editorial classification and
-publish immediately with available metadata or a neutral hostname title. Unsafe
+publish with available metadata or a neutral hostname title. Confirmed original
+404/410 responses fail before publication. Unsafe
 local/private targets remain rejected.
 
 [OpenClaw setup](automation/openclaw/INSTALL.md) describes the plugin supervising the

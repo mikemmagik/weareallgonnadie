@@ -265,7 +265,7 @@ test('recognized embeds and unsupported paths degrade to contract-valid links', 
   for (const url of [
     'https://youtu.be/abcdefghijk',
     'https://www.reddit.com/r/test/comments/abc123/title/',
-    'https://www.tiktok.com/@user/video/123456',
+    'https://www.tiktok.com/@user/video/6718335390845095173',
     'https://www.instagram.com/reel/abc_DEF/',
   ])
     assert.equal(providerEmbed(url).kind, 'provider');
@@ -1048,7 +1048,7 @@ test('manual metadata fallback never permits a private target, including unsafe 
   );
   const fallback = await prepareUrl(
     'https://youtu.be/abcdefghijk',
-    async () => new Response('', { status: 404 }),
+    async () => new Response('', { status: 403 }),
   );
   assert.equal(fallback.title, 'youtu.be');
   assert.equal(fallback.type, 'video');

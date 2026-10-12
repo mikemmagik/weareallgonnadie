@@ -20,6 +20,7 @@ import { handleUpdate } from '../automation/telegram/handler.ts';
 import { runDiscovery } from '../automation/discovery/run.ts';
 import { runChangelog } from '../automation/changelog/run.ts';
 import { encodeCursor } from '../worker/cursor.ts';
+import { SECURITY_HEADERS } from '../worker/security.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const fixture: CreatePostInput = {
@@ -161,6 +162,121 @@ test(
       const reset = () => db.prepare('DELETE FROM posts').run();
 
       await t.test(
+        'security headers cover real assets and Worker success/error responses',
+        async () => {
+          const home = await fetch(base);
+          const html = await home.text();
+          const script = html.match(/<script[^>]*src="([^"]+)"/)?.[1];
+          const style = html.match(/<link[^>]*href="([^"]+\.css)"/)?.[1];
+          assert.ok(script);
+          assert.ok(style);
+          for (const [path, init] of [
+            ['/', undefined],
+            [script, undefined],
+            [style, undefined],
+            ['/favicon.svg', undefined],
+            ['/missing-asset', undefined],
+            ['/api/posts', undefined],
+            ['/api/unknown', undefined],
+            ['/api/posts', { method: 'POST' }],
+            ['/api/posts', { method: 'POST', headers, body: '{}' }],
+          ] as const) {
+            const response = await fetch(`${base}${path}`, init);
+            for (const [name, value] of Object.entries(SECURITY_HEADERS))
+              assert.equal(
+                response.headers.get(name),
+                value,
+                `${path}: ${name}`,
+              );
+            await response.body?.cancel();
+          }
+        },
+      );
+
+      await t.test(
+        'FIX-001 missing originals never insert D1 rows and short video metadata round-trips',
+        async () => {
+          const publisher = new Publisher(
+            new Api(base, 'integration-test-only'),
+            new State(join(directory, 'fix-state')),
+          );
+          const update = (url: string, user = 123) => ({
+            message: {
+              from: { id: user },
+              chat: { id: user, type: 'private' },
+              text: url,
+            },
+          });
+          for (const status of [404, 410]) {
+            const before = await db
+              .prepare('SELECT COUNT(*) AS count FROM posts')
+              .first<{ count: number }>();
+            const reply = await handleUpdate(
+              update(`https://example.com/gone-${status}`),
+              new Set(['123']),
+              publisher,
+              async () => new Response('', { status }),
+            );
+            assert.match(reply!.text, /^FAILED/);
+            assert.match(reply!.text, new RegExp(`HTTP ${status}`));
+            assert.match(reply!.text, /No publication payload was saved/);
+            const after = await db
+              .prepare('SELECT COUNT(*) AS count FROM posts')
+              .first<{ count: number }>();
+            assert.deepEqual(after, before);
+          }
+          assert.equal(
+            await handleUpdate(
+              update('https://example.com/denied', 456),
+              new Set(['123']),
+              publisher,
+              async () => assert.fail('Unauthorized metadata request'),
+            ),
+            null,
+          );
+          assert.match(
+            (await handleUpdate(
+              update('https://127.0.0.1/'),
+              new Set(['123']),
+              publisher,
+              async () => assert.fail('Unsafe metadata request'),
+            ))!.text,
+            /^FAILED/,
+          );
+          const original = 'https://vt.tiktok.com/local-fixture/';
+          const final =
+            'https://www.tiktok.com/@test/video/6718335390845095173';
+          const metadata = async () => {
+            const response = new Response('');
+            Object.defineProperty(response, 'url', { value: final });
+            return response;
+          };
+          const reply = await handleUpdate(
+            update(original),
+            new Set(['123']),
+            publisher,
+            metadata,
+          );
+          assert.match(reply!.text, /^PUBLISHED/);
+          const post = (await publisher.api.posts())[0]!;
+          assert.equal(post.url, original);
+          assert.equal(post.type, 'video');
+          assert.equal(post.embed?.url, final);
+          assert.match(
+            (await handleUpdate(
+              update(original),
+              new Set(['123']),
+              publisher,
+              metadata,
+            ))!.text,
+            /^ALREADY EXISTS/,
+          );
+          assert.equal((await publisher.api.posts()).length, 1);
+        },
+      );
+      await reset();
+
+      await t.test(
         'schema, constraints, immutable keys, and indexed feed',
         async () => {
           const result = await create();
@@ -211,6 +327,48 @@ test(
           assert.ok(
             plans.results.every((row) => !/TEMP B-TREE/.test(row.detail)),
           );
+        },
+      );
+      await reset();
+      await t.test(
+        'gateway outbox replay is durable even after an uncertain committed D1 write',
+        async () => {
+          let gatewayFailed = true;
+          const state = new State(join(directory, 'gateway-state'));
+          const publisher = new Publisher(
+            new Api(
+              base,
+              'integration-test-only',
+              async (url, init) => {
+                const response = await fetch(url, init);
+                if (!gatewayFailed) return response;
+                await response.body?.cancel();
+                return new Response('', { status: 502 });
+              },
+              async () => {},
+            ),
+            state,
+          );
+          await assert.rejects(publisher.submit(fixture));
+          assert.equal((await publisher.api.posts().catch(() => [])).length, 0);
+          const rows = await db
+            .prepare('SELECT COUNT(*) AS count FROM posts')
+            .first<{ count: number }>();
+          assert.equal(rows!.count, 1);
+          assert.equal(
+            (await state.names()).filter((name) => name.startsWith('outgoing-'))
+              .length,
+            1,
+          );
+          gatewayFailed = false;
+          assert.deepEqual(await publisher.replay(), { sent: 1, failed: 0 });
+          assert.equal((await publisher.api.posts()).length, 1);
+          assert.equal(
+            (await state.names()).filter((name) => name.startsWith('outgoing-'))
+              .length,
+            0,
+          );
+          assert.equal((await publisher.processed()).length, 1);
         },
       );
       await reset();
@@ -736,6 +894,61 @@ test(
             await browser('feed', ids);
             await api(`/${ids.target}`, { method: 'DELETE', headers });
             await browser('deleted', ids);
+            ids.short = (
+              await create({
+                ...fixture,
+                url: 'https://vt.tiktok.com/browser-fixture/',
+                source_item_id: 'fix-short',
+                type: 'video',
+                preview: null,
+                embed: {
+                  kind: 'provider',
+                  provider: 'tiktok',
+                  id: '6718335390845095173',
+                  url: 'https://www.tiktok.com/@test/video/6718335390845095173',
+                },
+              })
+            ).data.post.id;
+            ids.unsafe = (
+              await create({
+                ...fixture,
+                url: 'https://example.com/unsafe-preview',
+                source_item_id: 'fix-preview',
+                preview: {
+                  image_url: 'https://127.0.0.1/private.png',
+                  alt_text: null,
+                },
+                embed: null,
+              })
+            ).data.post.id;
+            ids.reddit = (
+              await create({
+                ...fixture,
+                url: 'https://www.reddit.com/r/test/comments/abc123/title/',
+                source: 'Reddit',
+                source_item_id: 'fix-reddit',
+                preview: null,
+                embed: {
+                  kind: 'provider',
+                  provider: 'reddit',
+                  id: 'abc123',
+                  url: 'https://www.reddit.com/r/test/comments/abc123/title/',
+                },
+              })
+            ).data.post.id;
+            ids.publicPreview = (
+              await create({
+                ...fixture,
+                url: 'https://example.com/public-preview',
+                source_item_id: 'fix-public-preview',
+                preview: {
+                  image_url: 'https://images.example/public.svg',
+                  alt_text: null,
+                },
+                embed: null,
+              })
+            ).data.post.id;
+            await browser('fix', ids);
             assert.equal(
               (await fetch(base)).status,
               200,

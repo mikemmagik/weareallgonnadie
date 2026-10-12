@@ -3,7 +3,7 @@ import type {
   Embed,
   PostOrigin,
 } from '../../shared/contracts.ts';
-import { isHttpUrl } from '../../shared/contracts.ts';
+import { publicPreviewUrl } from '../../shared/preview.ts';
 import {
   normalizeUrl,
   publicHttp,
@@ -62,7 +62,7 @@ export function extractMetadata(
       url,
     ).toString();
     if (meta.get('og:image') || meta.get('twitter:image'))
-      image = isHttpUrl(candidate) ? candidate : null;
+      image = publicPreviewUrl(candidate);
   } catch {
     /* Missing preview is valid. */
   }
@@ -95,7 +95,7 @@ export function providerEmbed(input: string): Embed {
         : url.pathname.match(/\/comments\/([a-z0-9]+)(?:\/|$)/)?.[1];
   } else if (['tiktok.com', 'www.tiktok.com', 'm.tiktok.com'].includes(host)) {
     provider = 'tiktok';
-    id = url.pathname.match(/^\/@[^/]+\/video\/(\d+)\/?$/)?.[1];
+    id = url.pathname.match(/^\/@[^/]+\/video\/(\d{15,25})\/?$/)?.[1];
   } else if (['instagram.com', 'www.instagram.com'].includes(host)) {
     provider = 'instagram';
     id = url.pathname.match(/^\/(?:p|reel|tv)\/([\w-]+)\/?$/)?.[1];
@@ -136,9 +136,11 @@ export async function prepareUrl(
   http: Http = publicHttp,
 ): Promise<CreatePostInput> {
   const url = publicUrl(input).toString();
+  let resolvedUrl = url;
   let html = '';
   try {
     const response = await retryRequest(http, url);
+    if (response.url) resolvedUrl = publicUrl(response.url).toString();
     if (
       (response.headers.get('content-type') ?? '')
         .toLowerCase()
@@ -147,15 +149,25 @@ export async function prepareUrl(
       html = await response.text();
   } catch (error) {
     // Metadata availability is optional. Unsafe targets remain failures; never bypass them.
-    if (!(error instanceof RequestFailure)) throw error;
+    if (!(error instanceof RequestFailure) || [404, 410].includes(error.status))
+      throw error;
   }
-  const metadata = extractMetadata(html, url);
+  const metadata = extractMetadata(html, resolvedUrl);
   const payload = linkPayload(
     input,
     metadata.title,
     new URL(url).hostname,
     'telegram',
   );
+  const resolvedEmbed = providerEmbed(normalizeUrl(resolvedUrl));
+  if (resolvedEmbed.kind === 'provider') {
+    payload.embed = resolvedEmbed;
+    payload.type = ['youtube', 'tiktok', 'instagram'].includes(
+      resolvedEmbed.provider,
+    )
+      ? 'video'
+      : 'news';
+  }
   payload.preview = metadata.image
     ? { image_url: metadata.image, alt_text: null }
     : null;

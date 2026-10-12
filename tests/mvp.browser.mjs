@@ -19,6 +19,113 @@ export async function verifyMvp(page, scenario) {
     if (request.url().startsWith(`${base}/api/posts/`))
       itemReads.push(request.url());
   });
+  if (mode === 'fix') {
+    const previewRequests = [];
+    page.on('request', (request) => previewRequests.push(request.url()));
+    await page.route('https://images.example/**', (route) =>
+      route.fulfill({
+        contentType: 'image/svg+xml',
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450"><rect width="800" height="450" fill="#234"/></svg>',
+      }),
+    );
+    await page.route('https://www.tiktok.com/**', (route) =>
+      route.fulfill({ contentType: 'text/html', body: '<p>Mock player</p>' }),
+    );
+    await page.goto(base);
+    const short = page.locator(`[data-post-id="${ids.short}"]`);
+    const unsafe = page.locator(`[data-post-id="${ids.unsafe}"]`);
+    const reddit = page.locator(`[data-post-id="${ids.reddit}"]`);
+    const publicPreview = page.locator(`[data-post-id="${ids.publicPreview}"]`);
+    await short.waitFor();
+    check(
+      (await page.locator('iframe').count()) === 0,
+      'FIX: players remain click-to-load under production CSP',
+    );
+    check(
+      (await unsafe.locator('img').count()) === 0,
+      'FIX: private preview produces an imageless card',
+    );
+    check(
+      !previewRequests.some((url) => url.startsWith('https://127.0.0.1/')),
+      'FIX: browser never requests a private preview target',
+    );
+    check(
+      (await unsafe
+        .locator('a[href="https://example.com/unsafe-preview"]')
+        .count()) > 0,
+      'FIX: unsafe preview keeps original links',
+    );
+    await publicPreview.locator('img').waitFor();
+    check(
+      (await publicPreview.locator('img').getAttribute('src')) ===
+        'https://images.example/public.svg',
+      'FIX: valid public previews remain visible',
+    );
+    check(
+      (await reddit.locator('button.load-player').count()) === 0,
+      'UNRESOLVED D03: no invented Reddit player',
+    );
+    check(
+      (await reddit
+        .locator(
+          'a[href="https://www.reddit.com/r/test/comments/abc123/title/"]',
+        )
+        .count()) === 2,
+      'UNRESOLVED D03: source attribution and original link remain',
+    );
+    await short.locator('button.load-player').click();
+    const frame = short.locator('iframe');
+    check(
+      (await frame.getAttribute('src')) ===
+        'https://www.tiktok.com/player/v1/6718335390845095173?autoplay=0',
+      'FIX: short TikTok ID matches reviewed player origin',
+    );
+    check(
+      (await frame.getAttribute('allow')).includes("autoplay 'none'"),
+      'FIX: short TikTok player denies autoplay',
+    );
+    check(
+      (await frame.getAttribute('sandbox')).includes('allow-scripts'),
+      'FIX: third-party player remains sandboxed',
+    );
+    check(
+      (await short
+        .locator('a[href="https://vt.tiktok.com/browser-fixture/"]')
+        .count()) > 0,
+      'FIX: clickable submitted short URL survives player loading',
+    );
+    await page.evaluate(() => {
+      window.cspViolations = [];
+      document.addEventListener('securitypolicyviolation', (event) =>
+        window.cspViolations.push({
+          directive: event.effectiveDirective,
+          blocked: event.blockedURI,
+        }),
+      );
+      const script = document.createElement('script');
+      script.textContent = 'window.cspBypassed = true';
+      document.body.append(script);
+      const external = document.createElement('script');
+      external.src = 'https://images.example/untrusted.js';
+      document.body.append(external);
+    });
+    await page.waitForFunction(() => window.cspViolations.length >= 2);
+    check(
+      await page.evaluate(() => window.cspBypassed === undefined),
+      'FIX: production CSP blocks inline scripts',
+    );
+    check(
+      await page.evaluate(() =>
+        window.cspViolations.some(
+          (event) =>
+            event.directive === 'script-src-elem' &&
+            event.blocked === 'https://images.example/untrusted.js',
+        ),
+      ),
+      'FIX: production CSP reports arbitrary third-party scripts as blocked',
+    );
+    return { passed: checks.length, checks };
+  }
   const url = mode === 'empty' ? base : `${base}/?post=${ids.target}`;
   await page.goto(url);
   if (mode === 'empty') {
@@ -153,7 +260,7 @@ if (import.meta.main) {
       '--package',
       '@playwright/cli',
       'playwright-cli',
-      '-s=doom',
+      `-s=${process.env.WAAGD_BROWSER_SESSION ?? 'doom'}`,
       'run-code',
       code,
     ],

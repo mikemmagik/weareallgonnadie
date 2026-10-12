@@ -55,7 +55,8 @@ reporting month in the configured timezone; at most 100 _cited_ references remai
 allowed, requiring no schema expansion. An exceptional unresolved local midnight
 boundary fails explicitly rather than silently changing periods.
 
-Metadata availability is optional for manual Telegram URLs. Neutral hostname titles
+Metadata availability is optional for manual Telegram URLs; confirmed original
+404/410 removal is a technical failure (FIX-001). Neutral hostname titles
 retain human approval without inventing factual headlines. Unsafe URLs remain a
 non-retryable error across metadata fallback, including private redirect destinations.
 Fetching preserves the original query independently of canonical identity.
@@ -64,3 +65,20 @@ The existing OpenClaw plugin remains the primary poller lifecycle, avoiding anot
 service manager. Its supervised Node child keeps the existing standalone CLI usable
 for diagnostics. The owner confirmed OpenClaw is absent on the integration Mac;
 real host/version/model/bot verification is a documented prerequisite.
+
+## FIX-001 remediation decisions
+
+Preserve contract v1 and tracking-based canonical identity, even when a TikTok short
+link resolves to a checked canonical player URL. No cross-form deduplication promise
+is added. Reject insecure state paths instead of changing user folder permissions.
+Expand temporary HTTP retries to 408/429/500/502/503/504; retain the existing three
+requests per cycle, ten submission cycles, 50-item replay limit and manual recovery.
+
+Reddit inline rendering remains unresolved. Official oEmbed returns HTML plus a
+widget script; the present structured iframe renderer has no reviewed widget adapter.
+Keep attribution/original links and do not invent a player URL or permit untrusted
+HTML/script in the host DOM. Details and official references are in the FIX-001 handoff.
+
+External previews use a shared HTTPS URL policy at ingestion and rendering. It rejects
+known local names and reserved/private literals, without fetching images or adding
+a proxy. Future DNS answers and browser-followed redirects remain an explicit limit.

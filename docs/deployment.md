@@ -104,3 +104,39 @@ preview images; source text remains escaped. Recheck provider playback with vali
 public content during QA. If importing pre-integration data, reconcile any old
 tracking-sensitive canonical URLs with collision/tombstone review before enabling
 writes; the integration tests use a fresh local database.
+
+## FIX-001 security header preparation
+
+`public/_headers` is copied to `dist/_headers` for directly served static assets.
+`worker/security.ts` attaches the same policy to every application Worker response,
+including API successes/errors and asset fallback responses. Worker-first routing
+remains API-only. Cloudflare documents that static `_headers` rules do not apply to
+Worker-generated responses; see [Static Assets headers](https://developers.cloudflare.com/workers/static-assets/headers/)
+and [Worker security headers](https://developers.cloudflare.com/workers/examples/security-headers/).
+
+Prepared policy:
+
+- CSP defaults to no resources. Scripts, styles and API connections are same-origin;
+  inline scripts/styles, eval, arbitrary third-party scripts, objects and forms are
+  denied. `base-uri 'none'` prevents injected base URLs.
+- Frames allow exactly YouTube NoCookie, TikTok and Instagram HTTPS origins.
+  `frame-ancestors 'none'` plus `X-Frame-Options: DENY` prevents framing this site.
+  Third-party iframe content has its own policy; the host does not run provider scripts.
+- Images allow same-origin assets and HTTPS preview origins. The scheme allowance is
+  intentional for public source previews, and is not an arbitrary script/frame allowance.
+  The renderer separately suppresses known local/private URLs. Browser DNS/redirect
+  destinations cannot be pinned under the direct-image/no-proxy model.
+- `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and explicit
+  Permissions Policy deny autoplay, camera, microphone, geolocation, payment and USB.
+  Fullscreen is restricted to the host and the three reviewed players.
+- HSTS is `max-age=31536000`. Browsers ignore it on insecure local HTTP; production
+  must serve HTTPS. No includeSubDomains/preload commitment is made for unreviewed
+  subdomains. Configure/review edge HTTPS behavior only during authorized deployment.
+
+The real local HTTP integration suite checks HTML, CSS, JavaScript, SVG, missing
+assets, public API reads, unknown routes and auth/validation failures. Production
+Chromium checks confirm the feed loads under CSP and scripts are blocked as intended.
+This verifies local Wrangler behavior only. Edge redirects, platform-generated errors,
+TLS/HSTS enforcement, remote assets/cache behavior and provider playback still require
+separately authorized deployment and smoke testing. Keep `_headers` and Worker values
+aligned; the integration test compares actual responses to the Worker policy.

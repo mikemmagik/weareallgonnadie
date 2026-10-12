@@ -108,20 +108,36 @@ Metadata fetching is unauthenticated HTTP(S). All DNS addresses must be public; 
 checked address is pinned per request. Each redirect is checked, with four redirects
 maximum, standard ports only, and a 2 MB document limit. Private/local/mapped/reserved
 and conservatively excluded IPv6 ranges fail closed. Only text/XML/JSON bodies are
-buffered; preview image URLs are metadata only. No raw embed HTML, media reuploads,
+buffered; preview image URLs are metadata only. DNS waiting, redirects and sockets
+share the request signal (35 seconds per retryRequest attempt, or 15 seconds for a
+standalone publicHttp call). OS lookup itself may finish later, but cannot open a
+socket after the deadline. HTTPS previews reject local names, private/reserved IP
+literals, credentials, non-default ports and unsafe schemes at ingestion/rendering.
+Browser-followed image redirects and future DNS answers remain unpinned; no image
+fetch/proxy is introduced. No raw embed HTML, media reuploads,
 protected scraping, credentials, paywall workarounds or authentication bypasses.
 
 Unavailable or missing metadata gets a neutral hostname title and optional link card. Known public
 YouTube/Reddit/TikTok/Instagram URL forms get provider hints; rendering is not promised.
-Short URLs/unsupported forms keep links. Unsafe targets fail technically; ordinary HTTP/transport metadata failures still allow
-the original public link to publish without inventing a headline.
+Verified vt/vm TikTok redirects use structured canonical video metadata; unresolved short URLs/unsupported forms keep links. Unsafe targets fail technically; uncertain HTTP/transport metadata failures still allow
+the original public link to publish without inventing a headline. Confirmed original
+404/410 is rejected before POST and never creates an outgoing payload. An unavailable
+player is not evidence that an available original was removed.
 
-Private state uses atomic `0600` JSON files and workflow/payload locks:
+Private state uses owned `0700` directories, atomic owned `0600` regular JSON files
+and workflow/payload locks. Every read/write/remove/list/lock validates its path;
+existing permissive folders, incorrect ownership and user-created symlinks fail with
+an actionable error. No automatic chmod occurs. macOS root `/var`, `/tmp`, `/etc`
+aliases are accepted only when they resolve to the corresponding `/private` path.
+Review a dedicated state folder and correct it manually, or choose a fresh private
+folder. Do not use shared folders as state.
+
+State records:
 
 - `outgoing-*.json`: exact payload saved before submission, no credentials. Retry
-  transport errors/429/500/503, at most three HTTP attempts with backoff/jitter per
+  transport errors/408/429/500/502/503/504, at most three HTTP attempts with backoff/jitter per
   cycle, at most ten submission cycles per saved payload. Honor Retry-After and persist
-  long delays. `retry` processes at most 50 due payloads. Exhausted payloads remain
+  long delays. Last HTTP status and attempt count persist after exhaustion. `retry` processes at most 50 due payloads. Exhausted payloads remain
   for manual review. Auth/validation/501 errors are removed from automatic replay.
 - `processed-*.json`: successful/duplicate identities, including tombstones, suppress
   repeat discovery. Backend atomic deduplication remains authoritative.
@@ -136,7 +152,9 @@ Private state uses atomic `0600` JSON files and workflow/payload locks:
   After forced termination, confirm the process is gone before manually removing
   its stale lock; no automatic guessing.
 
-Deletes have bounded in-process retries and are not queued. Replay does not send
+Telegram only claims that a publication was saved for retry after confirming the
+outgoing record exists. Permanent publication errors and deletion failures do not
+claim saved recovery. Deletes have bounded in-process retries and are not queued. Replay does not send
 later Telegram notifications. Keep state outside the repository and avoid symlinks
 into repository/workspace folders. Review exhausted outgoing files before explicitly
 resubmitting; no separate broker is introduced.
