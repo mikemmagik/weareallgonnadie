@@ -16,7 +16,7 @@
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "node --test tests/contracts.test.ts tests/worker.test.ts tests/frontend.test.ts automation/tests/*.test.ts",
+    "test": "node --test tests/contracts.test.ts tests/worker.test.ts tests/frontend.test.ts tests/media.test.ts automation/tests/*.test.ts",
     "test:smoke": "node --test tests/build.smoke.test.ts",
     "build:frontend": "astro build",
     "build:worker": "wrangler deploy --dry-run --outdir build/worker",

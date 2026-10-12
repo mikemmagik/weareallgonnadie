@@ -5,7 +5,7 @@ monthly Humanity Changelogs. Astro builds static assets; a Cloudflare Worker ser
 public reads and authenticated writes against D1. Local automation talks only to
 that HTTP API. The site runs independently of automation or OpenClaw.
 
-**Status:** FIX-001 on `fix/qa-001`; see [remediation handoff](docs/fix-001-handoff.md).
+**Status:** FIX-002 on `fix/final-media`; see [remediation handoff](docs/fix-002-handoff.md).
 Backend, frontend and automation retain the integrated MVP.
 No production deployment, real bot or OpenClaw configuration was created.
 
@@ -15,7 +15,7 @@ Node **24.x**, npm **11+**, Git and registry access for dependency installation.
 Cloudflare credentials, a real bot and an AI service are unnecessary for local tests.
 
 ```sh
-cd /Users/mikemmagik/Documents/waagd-integration
+cd /Users/mikemmagik/Documents/waagd-media-fixes
 npm ci
 npm run db:init
 cp .dev.vars.example .dev.vars

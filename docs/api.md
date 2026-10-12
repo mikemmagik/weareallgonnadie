@@ -246,8 +246,8 @@ other query components, original encoding and ordering. Keep `v`, `list`, `id`, 
 signature/access parameters and unknown keys. Preserve path case and trailing-slash
 semantics. For example, `?v=abc&utm_source=telegram` and `?v=abc&fbclid=123` share
 identity, while `?v=def` remains distinct. This INT-001 semantic refinement is
-implemented once in `normalizePublicationUrl` and used by backend and automation. Do not follow
-redirects or infer provider-specific equivalence in this phase. If no URL exists,
+implemented once in `normalizePublicationUrl` and used by backend and automation. Ordinary URL normalization does not follow redirects. FIX-002 adds the explicitly
+approved TikTok provider identity rule below. If no URL exists,
 canonical_url remains null. The regular response stores the normalized canonical URL
 while preserving the original `url` field.
 
@@ -388,3 +388,45 @@ Authentication failures precede content validation for recognized write routes.
 Unknown API routes always stay JSON and must not fall through to HTML assets.
 Platform-generated limits/errors outside the Worker are not guaranteed to use this
 application envelope; clients must handle non-JSON transport responses safely.
+
+## FIX-002 approved media policy
+
+The owner approved TikTok cross-URL identity and required Reddit inline rendering.
+Wire fields, envelopes, cursor version and D1 schema remain v1. Ingestion validation
+and duplicate semantics are refined for recognized TikTok videos only:
+
+- Persist `source: "TikTok"` and `source_item_id` equal to the verified numeric video
+  ID (15–25 decimal digits, nonzero leading digit). Preserve `url` exactly as submitted
+  and the existing tracking-normalized `canonical_url`.
+- Automation obtains short-link identity from the safely resolved canonical video URL.
+  Backend ingestion derives identity from a supported canonical original URL or
+  matching structured TikTok embed URL. Authenticated writers supply resolved metadata;
+  the Worker validates its structure/consistency, without fetching arbitrary URLs or
+  claiming independent verification that a short link redirects to the supplied ID.
+- A supplied non-null source ID must agree. TikTok provider ID, embed URL, supported
+  TikTok original and any recognized canonical hint must agree. Missing source IDs are
+  filled; alternate source labels normalize to `TikTok`. Arbitrary IDs and unresolved
+  short links cannot claim a TikTok identity. Unresolved links remain safe fallbacks.
+- Unique `(source, source_item_id)` remains atomic. An insertion-transaction guard also
+  detects old immutable rows claiming that TikTok ID or containing its canonical
+  original URL. One structurally verified legacy row returns duplicate without changing
+  its content/identity; contradictory or multiple records return 400 for data review.
+  Deleted rows participate in both paths. No implicit merge, backfill or resurrection.
+  Other provider namespaces retain exact case-sensitive behavior.
+
+Reddit supports post paths `/r/<subreddit>/comments/<base36-id>/[slug]` on reddit.com,
+www.reddit.com and old.reddit.com, plus redd.it short links. IDs are lowercase base36,
+3–10 characters. Provider metadata must agree with the post URL before rendering.
+Comments, user pages, communities, invalid IDs and arbitrary HTML use original links.
+News and meme cards are equally eligible; recognized originals without provider
+metadata can also offer the widget.
+
+After an explicit click, the frontend opens `/embed/reddit?url=<validated-post-url>`.
+This **GET-only HTML adapter** is not a publication API and needs no write token.
+It constructs the official blockquote plus `https://embed.reddit.com/widgets.js` inside
+an opaque sandbox. No arbitrary oEmbed HTML enters either document. For redd.it only,
+it requests the fixed official HTTPS `/oembed` endpoint with redirects disabled, a
+five-second deadline and a 64 KiB response limit, extracting only a validated canonical
+post URL with the same ID. Unavailable/restricted responses retain an explicit fallback.
+The provider controls content eligibility. Source attribution and original links remain
+visible outside the sandbox before/after loading; autoplay permissions remain denied.

@@ -21,6 +21,7 @@ import { runDiscovery } from '../automation/discovery/run.ts';
 import { runChangelog } from '../automation/changelog/run.ts';
 import { encodeCursor } from '../worker/cursor.ts';
 import { SECURITY_HEADERS } from '../worker/security.ts';
+import { prepareUrl } from '../automation/core/metadata.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const fixture: CreatePostInput = {
@@ -62,7 +63,7 @@ test(
         assets: {
           directory: join(root, 'dist'),
           binding: 'ASSETS',
-          run_worker_first: ['/api', '/api/*'],
+          run_worker_first: ['/api', '/api/*', '/embed/reddit'],
         },
         d1_databases: [
           {
@@ -189,6 +190,312 @@ test(
                 `${path}: ${name}`,
               );
             await response.body?.cancel();
+          }
+        },
+      );
+
+      await t.test(
+        'FIX-002 TikTok cross-form identities, races, namespaces and tombstones in real D1',
+        async () => {
+          const videoId = '6718335390845095173';
+          const final = `https://www.tiktok.com/@test/video/${videoId}`;
+          const urls = [
+            'https://vt.tiktok.com/fix002/',
+            'https://vm.tiktok.com/fix002/',
+            final,
+          ];
+          const prepare = (url: string) =>
+            prepareUrl(url, async () => {
+              const response = new Response('');
+              Object.defineProperty(response, 'url', { value: final });
+              return response;
+            });
+          for (const order of [
+            urls,
+            [...urls].reverse(),
+            urls.map((url) => `${url}?utm_source=telegram`),
+          ]) {
+            await reset();
+            let first: Post | undefined;
+            for (const [index, url] of order.entries()) {
+              const result = await create(await prepare(url));
+              assert.equal(result.status, index ? 200 : 201);
+              assert.equal(
+                result.data.outcome,
+                index ? 'duplicate' : 'created',
+              );
+              if (!first) first = result.data.post;
+              assert.equal(result.data.post.id, first.id);
+              assert.equal(result.data.post.url, order[0]);
+              assert.equal(result.data.post.source, 'TikTok');
+              assert.equal(result.data.post.source_item_id, videoId);
+            }
+            assert.equal(
+              await db
+                .prepare('SELECT COUNT(*) AS n FROM posts')
+                .first<number>('n'),
+              1,
+            );
+          }
+          await reset();
+          const payloads = await Promise.all(urls.map(prepare));
+          const race = await Promise.all(
+            Array.from({ length: 18 }, (_, i) =>
+              create({
+                ...payloads[i % 3]!,
+                source: ['vt.tiktok.com', 'tiktok', 'arbitrary'][i % 3]!,
+              }),
+            ),
+          );
+          assert.equal(race.filter((r) => r.status === 201).length, 1);
+          assert.equal(race.filter((r) => r.status === 200).length, 17);
+          assert.equal(
+            await db
+              .prepare('SELECT COUNT(*) AS n FROM posts')
+              .first<number>('n'),
+            1,
+          );
+          const id = race[0]!.data.post.id;
+          await api(`/${id}`, { method: 'DELETE', headers });
+          const tombstone = await create(payloads[1]!);
+          assert.equal(tombstone.status, 200);
+          assert.ok(tombstone.data.post.deleted_at);
+          assert.equal((await api<PostsPage>('')).data.posts.length, 0);
+          await reset();
+          const first = await create(payloads[0]!);
+          assert.equal(first.status, 201);
+          assert.equal(
+            (
+              await create({
+                ...payloads[0]!,
+                url: 'https://www.tiktok.com/@other/video/7420000000000000001',
+                canonical_url: null,
+                source_item_id: null,
+                embed: null,
+              })
+            ).status,
+            201,
+          );
+          assert.equal(
+            (
+              await create({
+                ...fixture,
+                url: 'https://example.com/different-provider',
+                canonical_url: null,
+                source: 'Other provider',
+                source_item_id: videoId,
+                embed: null,
+              })
+            ).status,
+            201,
+          );
+          for (const invalid of [
+            { ...payloads[0]!, source_item_id: 'invalid' },
+            {
+              ...payloads[0]!,
+              embed: {
+                kind: 'provider',
+                provider: 'tiktok',
+                id: '123',
+                url: final,
+              },
+            },
+            {
+              ...payloads[0]!,
+              embed: {
+                kind: 'provider',
+                provider: 'tiktok',
+                id: videoId,
+                url: 'https://vm.tiktok.com/unresolved/',
+              },
+            },
+            { ...payloads[0]!, url: 'https://example.com/spoof' },
+            {
+              ...payloads[0]!,
+              url: 'https://www.tiktok.com/@test/video/7420000000000000001',
+            },
+            {
+              ...payloads[0]!,
+              canonical_url:
+                'https://www.tiktok.com/@test/video/7420000000000000001',
+            },
+            {
+              ...fixture,
+              source: 'TikTok',
+              source_item_id: videoId,
+              embed: null,
+            },
+          ])
+            assert.equal(
+              (await create(invalid as CreatePostInput)).status,
+              400,
+            );
+          const noMetadata = await create({
+            ...fixture,
+            url: 'https://www.tiktok.com/@test/video/7420000000000000002',
+            canonical_url: null,
+            source_item_id: null,
+            embed: null,
+          });
+          assert.equal(noMetadata.status, 201);
+          assert.equal(
+            noMetadata.data.post.source_item_id,
+            '7420000000000000002',
+          );
+          const unresolved = await create({
+            ...fixture,
+            url: 'https://vt.tiktok.com/unresolved/',
+            canonical_url: null,
+            source_item_id: null,
+            embed: null,
+          });
+          assert.equal(unresolved.status, 201);
+          assert.equal(unresolved.data.post.source_item_id, null);
+        },
+      );
+      await reset();
+
+      await t.test(
+        'FIX-002 immutable legacy TikTok claims deduplicate or fail closed without new rows',
+        async () => {
+          const videoId = '6718335390845095173';
+          const final = `https://www.tiktok.com/@test/video/${videoId}`;
+          const payload = await prepareUrl(final, async () => new Response(''));
+          const seed = async (suffix: string, embedUrl = final) => {
+            const result = await create({
+              ...fixture,
+              url: `https://vt.tiktok.com/legacy-${suffix}/`,
+              canonical_url: null,
+              source: `vt.tiktok.com-${suffix}`,
+              source_item_id: null,
+              embed: null,
+            });
+            await db
+              .prepare('UPDATE posts SET embed = ? WHERE id = ?')
+              .bind(
+                JSON.stringify({
+                  kind: 'provider',
+                  provider: 'tiktok',
+                  id: videoId,
+                  url: embedUrl,
+                }),
+                result.data.post.id,
+              )
+              .run();
+            return result.data.post.id;
+          };
+          // Simulate an older canonical record without embed metadata or stable namespace.
+          const canonicalLegacy = await create({
+            ...fixture,
+            url: final,
+            canonical_url: null,
+            source_item_id: null,
+            embed: null,
+          });
+          // Direct SQL insert is necessary because the new ingestion normalizes identities.
+          await reset();
+          await db
+            .prepare(
+              `INSERT INTO posts (id,type,url,canonical_url,source_item_id,title,source,origin,preview,embed,body,"references",published_at,deleted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            )
+            .bind(
+              canonicalLegacy.data.post.id,
+              'video',
+              final,
+              final,
+              null,
+              'Legacy',
+              'www.tiktok.com',
+              'telegram',
+              null,
+              null,
+              null,
+              '[]',
+              new Date().toISOString(),
+              null,
+            )
+            .run();
+          const legacyDuplicate = await create({
+            ...payload,
+            url: 'https://vm.tiktok.com/canonical-legacy/',
+            canonical_url: null,
+          });
+          assert.equal(legacyDuplicate.status, 200);
+          assert.equal(
+            legacyDuplicate.data.post.id,
+            canonicalLegacy.data.post.id,
+          );
+          await reset();
+          const old = await seed('one');
+          for (const url of [final, 'https://vm.tiktok.com/new-legacy/']) {
+            const duplicate = await create({ ...payload, url });
+            assert.equal(duplicate.status, 200);
+            assert.equal(duplicate.data.post.id, old);
+          }
+          await api(`/${old}`, { method: 'DELETE', headers });
+          assert.ok((await create(payload)).data.post.deleted_at);
+          await seed('two');
+          assert.equal((await create(payload)).status, 400);
+          assert.equal(
+            await db
+              .prepare('SELECT COUNT(*) AS n FROM posts')
+              .first<number>('n'),
+            2,
+          );
+          await reset();
+          await seed(
+            'bad',
+            'https://www.tiktok.com/@test/video/7420000000000000001',
+          );
+          assert.equal((await create(payload)).status, 400);
+          assert.equal(
+            await db
+              .prepare('SELECT COUNT(*) AS n FROM posts')
+              .first<number>('n'),
+            1,
+          );
+        },
+      );
+      await reset();
+
+      await t.test(
+        'FIX-002 Reddit adapter HTTP and scoped headers',
+        async () => {
+          const original =
+            'https://old.reddit.com/r/aww/comments/crpjwk/example/';
+          const response = await fetch(
+            `${base}/embed/reddit?url=${encodeURIComponent(original)}`,
+          );
+          assert.equal(response.status, 200);
+          assert.match(response.headers.get('content-type')!, /text\/html/);
+          const csp = response.headers.get('content-security-policy')!;
+          assert.match(csp, /sandbox allow-scripts allow-popups/);
+          assert.doesNotMatch(csp, /allow-same-origin/);
+          assert.equal(response.headers.get('x-frame-options'), 'SAMEORIGIN');
+          assert.match(
+            response.headers.get('permissions-policy')!,
+            /autoplay=\(\)/,
+          );
+          assert.match(
+            await response.text(),
+            /https:\/\/embed.reddit.com\/widgets.js/,
+          );
+          const main = await fetch(base);
+          assert.doesNotMatch(
+            main.headers.get('content-security-policy')!,
+            /widgets.js|unsafe-inline/,
+          );
+          await main.body?.cancel();
+          for (const bad of [
+            'https://evil.example/',
+            'https://reddit.com/r/private/',
+            'javascript:alert(1)',
+          ]) {
+            const response = await fetch(
+              `${base}/embed/reddit?url=${encodeURIComponent(bad)}`,
+            );
+            assert.equal(response.status, 400);
+            assert.doesNotMatch(await response.text(), /<script/);
           }
         },
       );
@@ -898,7 +1205,7 @@ test(
               await create({
                 ...fixture,
                 url: 'https://vt.tiktok.com/browser-fixture/',
-                source_item_id: 'fix-short',
+                source_item_id: null,
                 type: 'video',
                 preview: null,
                 embed: {
@@ -949,6 +1256,76 @@ test(
               })
             ).data.post.id;
             await browser('fix', ids);
+            for (const [key, input] of Object.entries({
+              redditMeme: {
+                ...fixture,
+                type: 'meme',
+                url: 'https://www.reddit.com/r/test/comments/abc124/title/',
+                canonical_url: null,
+                source: 'Reddit',
+                source_item_id: 'media-meme',
+                preview: null,
+                embed: {
+                  kind: 'provider',
+                  provider: 'reddit',
+                  id: 'abc124',
+                  url: 'https://www.reddit.com/r/test/comments/abc124/title/',
+                },
+              },
+              redditNoMetadata: {
+                ...fixture,
+                url: 'https://old.reddit.com/r/test/comments/abc125/title/',
+                canonical_url: null,
+                source: 'Reddit',
+                source_item_id: 'media-none',
+                preview: null,
+                embed: null,
+              },
+              redditInvalid: {
+                ...fixture,
+                url: 'https://www.reddit.com/r/test/comments/abc126/title/',
+                canonical_url: null,
+                source: 'Reddit',
+                source_item_id: 'media-invalid',
+                preview: null,
+                embed: {
+                  kind: 'provider',
+                  provider: 'reddit',
+                  id: 'invalid_id',
+                  url: 'https://www.reddit.com/r/test/comments/abc126/title/',
+                },
+              },
+              liveReddit: {
+                ...fixture,
+                url: 'https://www.reddit.com/r/aww/comments/crpjwk/every_year_this_mama_duck_brings_her_babies_to_my/',
+                canonical_url: null,
+                source: 'Reddit',
+                source_item_id: 'media-live',
+                preview: null,
+                embed: {
+                  kind: 'provider',
+                  provider: 'reddit',
+                  id: 'crpjwk',
+                  url: 'https://www.reddit.com/r/aww/comments/crpjwk/every_year_this_mama_duck_brings_her_babies_to_my/',
+                },
+              },
+            }))
+              ids[key] = (await create(input as CreatePostInput)).data.post.id;
+            for (const live of [
+              false,
+              ...(process.env.WAAGD_LIVE_REDDIT === '1' ? [true] : []),
+            ]) {
+              const { stdout } = await promisify(execFile)(
+                process.execPath,
+                [
+                  join(root, 'tests/media.browser.mjs'),
+                  JSON.stringify({ base, ids, live }),
+                ],
+                { cwd: root, encoding: 'utf8', maxBuffer: 2_000_000 },
+              );
+              console.log(stdout.trim());
+            }
+
             assert.equal(
               (await fetch(base)).status,
               200,

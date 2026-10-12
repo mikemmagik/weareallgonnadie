@@ -64,8 +64,8 @@ export async function verifyIndependentPolicies(page, { base, ids }) {
   }
   const reddit = page.locator(`[data-post-id="${ids.reddit}"]`);
   check(
-    (await reddit.locator('button.load-player').count()) === 0,
-    'D03 independently remains without inline control',
+    (await reddit.locator('button.load-player').count()) === 1,
+    'D03 independently offers click-to-load inline control',
   );
   check(
     (await reddit.locator('.post-source').textContent()).includes('Reddit'),

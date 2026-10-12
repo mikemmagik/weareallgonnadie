@@ -222,7 +222,7 @@ test('allowlisted players load without autoplay and reject mismatched provider I
       kind: 'provider',
       provider: 'reddit',
       id: 'abc',
-      url: 'https://reddit.com/r/test/comments/abc',
+      url: 'https://reddit.com/user/test',
     },
   ]) {
     assert.equal(playerFor(embed as Embed | null), null);

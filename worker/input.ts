@@ -4,6 +4,51 @@ import {
 } from '../shared/contracts.ts';
 import type { CreatePostInput } from '../shared/contracts.ts';
 import { ApiError, invalid } from './errors.ts';
+import { isTikTokUrl, tikTokVideoId } from '../shared/media.ts';
+
+/** Authenticated writers may supply resolved metadata, but never an unchecked identity. */
+export function publicationIdentity(input: CreatePostInput): CreatePostInput {
+  const originalId = tikTokVideoId(input.url);
+  const embed = input.embed;
+  const embedId =
+    embed?.kind === 'provider' && embed.provider === 'tiktok'
+      ? tikTokVideoId(embed.url)
+      : null;
+  if (
+    embed?.kind === 'provider' &&
+    embed.provider === 'tiktok' &&
+    (!embedId || embed.id !== embedId || !isTikTokUrl(input.url))
+  )
+    invalid(
+      'TikTok metadata requires a matching canonical video URL and TikTok original.',
+      'embed',
+    );
+  if (originalId && embedId && originalId !== embedId)
+    invalid('TikTok original and embed identify different videos.', 'embed.id');
+  const id = originalId ?? embedId;
+  if (id && embed?.kind === 'provider' && embed.provider !== 'tiktok')
+    invalid(
+      'TikTok publications require matching TikTok embed metadata.',
+      'embed.provider',
+    );
+  const canonicalId = tikTokVideoId(input.canonical_url);
+  if (id && canonicalId && canonicalId !== id)
+    invalid('TikTok canonical hint identifies another video.', 'canonical_url');
+  if (id) {
+    if (input.source_item_id !== null && input.source_item_id !== id)
+      invalid(
+        'TikTok source_item_id must agree with the verified video ID.',
+        'source_item_id',
+      );
+    return { ...input, source: 'TikTok', source_item_id: id };
+  }
+  if (input.source.toLowerCase() === 'tiktok' && input.source_item_id !== null)
+    invalid(
+      'TikTok identity requires a verified canonical video URL.',
+      'source_item_id',
+    );
+  return input;
+}
 
 /** Count encoded bytes while streaming, including when Content-Length is absent or false. */
 export async function readBody(
@@ -75,7 +120,7 @@ export async function createInput(request: Request): Promise<CreatePostInput> {
       400,
       result.issues,
     );
-  return result.value;
+  return publicationIdentity(result.value);
 }
 export async function validateDelete(
   request: Request,

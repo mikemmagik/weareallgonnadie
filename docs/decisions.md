@@ -82,3 +82,20 @@ HTML/script in the host DOM. Details and official references are in the FIX-001 
 External previews use a shared HTTPS URL policy at ingestion and rendering. It rejects
 known local names and reserved/private literals, without fetching images or adding
 a proxy. Future DNS answers and browser-followed redirects remain an explicit limit.
+
+## FIX-002 owner-approved remediation decisions
+
+The FIX-002 request supersedes the earlier cross-form TikTok exclusion and Reddit
+implementation deferral. Recognized TikTok videos use `TikTok` plus the verified
+video ID across URL forms, preserving originals and ordinary canonical normalization.
+The wire schema and immutable D1 indexes remain unchanged. Existing legacy claims are
+checked inside the insertion transaction; multiple/contradictory identities fail closed
+for explicit data review. No automatic historical content merging is authorized.
+
+Reddit inline display uses the official widget in a dedicated opaque sandbox document
+on the exact Worker-first `/embed/reddit` route. The host requires a click and denies
+autoplay. Main script origins do not expand. The adapter has scoped CSP/headers,
+validated post URLs, bounded official oEmbed resolution for short links and always
+visible original links. Fixed scrollable height avoids trusting parent resize messages
+or suppressing provider elements. Real provider eligibility/playback is recorded
+separately from deterministic regression; no mock is counted as production proof.

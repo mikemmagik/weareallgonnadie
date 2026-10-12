@@ -11,6 +11,20 @@ import { CONTENT_LIMITS } from '../shared/contracts.ts';
 import { encodeCursor } from './cursor.ts';
 import { ApiError } from './errors.ts';
 import { canonicalizeUrl } from './url.ts';
+import { publicationIdentity } from './input.ts';
+import { tikTokVideoId } from '../shared/media.ts';
+
+// Old immutable rows can carry the verified embed ID under a different namespace.
+// Block insertion on any such claim, then validate it before returning a duplicate.
+// The guard and lookup run in the insertion transaction, including deleted rows.
+const LEGACY_TIKTOK = `(lower(source) = 'tiktok' AND source_item_id = ?)
+  OR (CASE WHEN json_valid(embed) THEN json_extract(embed, '$.kind') = 'provider'
+    AND json_extract(embed, '$.provider') = 'tiktok' AND json_extract(embed, '$.id') = ? ELSE 0 END)
+  OR (substr(lower(url), 1, instr(lower(url), '/@') - 1) IN (
+    'https://tiktok.com', 'https://www.tiktok.com', 'https://m.tiktok.com',
+    'http://tiktok.com', 'http://www.tiktok.com', 'http://m.tiktok.com')
+    AND instr(url, '/video/' || ?) > 0
+    AND substr(url, instr(url, '/video/' || ?) + 7 + length(?), 1) IN ('', '/', '?', '#'))`;
 
 type PostRow = Omit<Post, 'preview' | 'embed' | 'references'> & {
   preview: string | null;
@@ -63,6 +77,11 @@ export async function createPost(
   db: D1Database,
   input: CreatePostInput,
 ): Promise<CreatePostResult> {
+  input = publicationIdentity(input);
+  const tikTokId = input.source === 'TikTok' ? input.source_item_id : null;
+  const legacyParams = tikTokId
+    ? [tikTokId, tikTokId, tikTokId, tikTokId, tikTokId]
+    : [];
   const id = crypto.randomUUID();
   const canonical = canonicalizeUrl(input.canonical_url ?? input.url);
   // URL serialization can expand Unicode beyond the approved field limit.
@@ -82,7 +101,8 @@ export async function createPost(
     db
       .prepare(
         `INSERT INTO posts (id, type, url, canonical_url, source_item_id, title, source, origin, preview, embed, body, "references", published_at, deleted_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL
+      ${tikTokId ? `WHERE NOT EXISTS (SELECT 1 FROM posts WHERE ${LEGACY_TIKTOK})` : 'WHERE 1'}
       ON CONFLICT(canonical_url) WHERE canonical_url IS NOT NULL DO NOTHING
       ON CONFLICT(source, source_item_id) WHERE source_item_id IS NOT NULL DO NOTHING
       RETURNING *`,
@@ -101,14 +121,16 @@ export async function createPost(
         input.body,
         JSON.stringify(input.references),
         new Date().toISOString(),
+        ...legacyParams,
       ),
     // Same transaction, primary database: duplicate lookup cannot race an insertion/deletion.
     db
       .prepare(
         `SELECT * FROM posts WHERE canonical_url = ? AND canonical_url IS NOT NULL
-      UNION SELECT * FROM posts WHERE source = ? AND source_item_id = ? AND source_item_id IS NOT NULL`,
+      UNION SELECT * FROM posts WHERE source = ? AND source_item_id = ? AND source_item_id IS NOT NULL
+      ${tikTokId ? `UNION SELECT * FROM posts WHERE ${LEGACY_TIKTOK}` : ''}`,
       )
-      .bind(canonical, input.source, input.source_item_id),
+      .bind(canonical, input.source, input.source_item_id, ...legacyParams),
   ]);
   if (results.length !== 2 || results.some((result) => !result.success))
     throw new Error('Database write failed');
@@ -127,6 +149,24 @@ export async function createPost(
     );
   const match = matches[0];
   if (!match) throw new Error('Duplicate lookup failed');
+  if (tikTokId) {
+    const legacy = post(match);
+    const originalId = tikTokVideoId(legacy.url);
+    const embedId =
+      legacy.embed?.kind === 'provider' &&
+      legacy.embed.provider === 'tiktok' &&
+      legacy.embed.id === tikTokId &&
+      tikTokVideoId(legacy.embed.url) === tikTokId;
+    if (
+      !(originalId === tikTokId || embedId) ||
+      (originalId && originalId !== tikTokId)
+    )
+      throw new ApiError(
+        'VALIDATION_ERROR',
+        'Existing TikTok identity requires data review.',
+        400,
+      );
+  }
   return {
     outcome: 'duplicate',
     post: post(match),

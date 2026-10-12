@@ -1,5 +1,6 @@
 import type { Post } from '../../shared/contracts.ts';
 import { publicPreviewUrl } from '../../shared/preview.ts';
+import { redditPost } from '../../shared/media.ts';
 import {
   changelogBlocks,
   playerFor,
@@ -52,8 +53,18 @@ function imageFor(post: Post): HTMLImageElement | null {
 function mediaFor(post: Post): HTMLElement | null {
   const image = imageFor(post);
   const original = safeUrl(post.url) ?? safeUrl(post.embed?.url);
-  const player = playerFor(post.embed);
-  if (post.type === 'news') {
+  const reddit = redditPost(post.url);
+  const player =
+    playerFor(post.embed) ??
+    (post.embed?.kind !== 'provider' && reddit
+      ? playerFor({
+          kind: 'provider',
+          provider: 'reddit',
+          id: reddit.id,
+          url: reddit.url,
+        })
+      : null);
+  if (post.type === 'news' && player?.provider !== 'Reddit') {
     if (!image || !original) return null;
     const media = externalLink(original, '', 'media news-media');
     media.setAttribute('aria-label', `Read original: ${post.title}`);
@@ -102,9 +113,14 @@ function mediaFor(post: Post): HTMLElement | null {
         frame.referrerPolicy = 'no-referrer';
         frame.setAttribute(
           'sandbox',
-          'allow-scripts allow-same-origin allow-presentation allow-popups',
+          player.provider === 'Reddit'
+            ? 'allow-scripts allow-popups'
+            : 'allow-scripts allow-same-origin allow-presentation allow-popups',
         );
-        frame.allow = "autoplay 'none'; fullscreen; picture-in-picture";
+        frame.allow =
+          player.provider === 'Reddit'
+            ? "autoplay 'none'; camera 'none'; microphone 'none'; fullscreen 'none'; clipboard-read 'none'; clipboard-write 'none'"
+            : "autoplay 'none'; fullscreen; picture-in-picture";
         // Keep a source escape hatch visible even when the provider blocks playback.
         media.replaceChildren(frame);
         const hint = element(

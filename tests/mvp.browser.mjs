@@ -62,8 +62,8 @@ export async function verifyMvp(page, scenario) {
       'FIX: valid public previews remain visible',
     );
     check(
-      (await reddit.locator('button.load-player').count()) === 0,
-      'UNRESOLVED D03: no invented Reddit player',
+      (await reddit.locator('button.load-player').count()) === 1,
+      'D03: news card offers the isolated official Reddit widget',
     );
     check(
       (await reddit
@@ -71,7 +71,7 @@ export async function verifyMvp(page, scenario) {
           'a[href="https://www.reddit.com/r/test/comments/abc123/title/"]',
         )
         .count()) === 2,
-      'UNRESOLVED D03: source attribution and original link remain',
+      'D03: source attribution and original link remain',
     );
     await short.locator('button.load-player').click();
     const frame = short.locator('iframe');

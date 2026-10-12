@@ -5,6 +5,7 @@ import { ApiError, errorResponse, invalid, json } from './errors.ts';
 import { createInput, validateDelete } from './input.ts';
 import { createPost, deletePost, getPost, listPosts } from './store.ts';
 import { secureResponse } from './security.ts';
+import { redditAdapter } from './reddit.ts';
 
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
@@ -83,6 +84,8 @@ async function route(request: Request, env: Env): Promise<Response> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    if (new URL(request.url).pathname === '/embed/reddit')
+      return redditAdapter(request);
     return secureResponse(await route(request, env));
   },
 };

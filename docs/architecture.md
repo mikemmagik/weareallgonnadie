@@ -25,7 +25,7 @@ Dedicated Telegram bot -> allowlisted human URL -> optional safe metadata -> POS
 Monthly schedule -> all visible month publications -> existing agent -> POST API
 ```
 
-Worker-first routing applies only to `/api` and `/api/*`; other matching assets can
+Worker-first routing applies to `/api`, `/api/*` and the exact `/embed/reddit` adapter; other matching assets can
 be served directly. Static 404 handling remains enabled. Automation writes do not
 trigger builds. Reads remain public; browser code never receives a write token.
 
@@ -68,3 +68,24 @@ manual diagnostic option and must not compete with the plugin's poller.
 
 See [local setup](../README.md), [API](api.md), [deployment](deployment.md), and
 [manual OpenClaw checks](../automation/openclaw/INSTALL.md).
+
+## FIX-002 media boundaries
+
+TikTok identity preparation uses the checked resolved video URL and preserves the
+original submission. Backend ingestion validates provider/URL/ID agreement and
+normalizes the stable namespace. D1 retains its existing constraints and immutable
+identity trigger. A conditional insert and duplicate lookup in one batch transaction
+protect old inconsistent namespaces and tombstones; ambiguous historical records
+require review rather than automatic merging. The legacy guard scans old claims,
+so production data volume should be assessed during deployment preparation.
+
+The Reddit adapter is one small Worker-generated document, not a new service or
+stored HTML model. The host only constructs its same-origin URL after a click.
+Both its iframe and response CSP sandbox omit `allow-same-origin`; external script
+execution cannot reach the parent DOM. The main CSP adds only same-origin frames;
+Reddit scripts remain forbidden in the main document. Only the adapter permits the
+fixed official widget script and embed.reddit.com child frames, with inline styles
+for official widget sizing. No parent messaging or automatic resize protocol exists:
+a 620px scrollable media area preserves the complete official widget and source links.
+No provider controls/branding are hidden or rewritten. Ordinary assets/API responses
+retain the existing headers. See the FIX-002 handoff for live verification limits.

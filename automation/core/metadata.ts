@@ -4,6 +4,7 @@ import type {
   PostOrigin,
 } from '../../shared/contracts.ts';
 import { publicPreviewUrl } from '../../shared/preview.ts';
+import { redditPost, tikTokVideoId } from '../../shared/media.ts';
 import {
   normalizeUrl,
   publicHttp,
@@ -89,13 +90,10 @@ export function providerEmbed(input: string): Embed {
     ['reddit.com', 'www.reddit.com', 'old.reddit.com', 'redd.it'].includes(host)
   ) {
     provider = 'reddit';
-    id =
-      host === 'redd.it'
-        ? url.pathname.match(/^\/([a-z0-9]+)\/?$/)?.[1]
-        : url.pathname.match(/\/comments\/([a-z0-9]+)(?:\/|$)/)?.[1];
+    id = redditPost(input)?.id;
   } else if (['tiktok.com', 'www.tiktok.com', 'm.tiktok.com'].includes(host)) {
     provider = 'tiktok';
-    id = url.pathname.match(/^\/@[^/]+\/video\/(\d{15,25})\/?$/)?.[1];
+    id = tikTokVideoId(input) ?? undefined;
   } else if (['instagram.com', 'www.instagram.com'].includes(host)) {
     provider = 'instagram';
     id = url.pathname.match(/^\/(?:p|reel|tv)\/([\w-]+)\/?$/)?.[1];
@@ -116,9 +114,15 @@ export function linkPayload(
   return {
     url,
     canonical_url: normalized,
-    source_item_id: sourceId,
+    source_item_id:
+      embed.kind === 'provider' && embed.provider === 'tiktok'
+        ? embed.id
+        : sourceId,
     title: title.slice(0, 300),
-    source: source.slice(0, 100),
+    source:
+      embed.kind === 'provider' && embed.provider === 'tiktok'
+        ? 'TikTok'
+        : source.slice(0, 100),
     origin,
     type:
       embed.kind === 'provider' &&
@@ -167,6 +171,10 @@ export async function prepareUrl(
     )
       ? 'video'
       : 'news';
+    if (resolvedEmbed.provider === 'tiktok') {
+      payload.source = 'TikTok';
+      payload.source_item_id = resolvedEmbed.id;
+    }
   }
   payload.preview = metadata.image
     ? { image_url: metadata.image, alt_text: null }

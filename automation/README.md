@@ -175,3 +175,9 @@ history deduplication has a 1,000-page cap and fails closed on truncation. Publi
 cursor reads are not snapshots: deletion concurrent with final POST cannot be checked
 atomically through the current API. Runtime checks validate IDs and output shapes;
 factual faithfulness and translation quality still depend on the configured model.
+
+FIX-002 recognized TikTok videos additionally carry `source: "TikTok"` and the verified
+video ID as `source_item_id`, including safely resolved vt/vm links. Original URLs and
+ordinary tracking normalization remain unchanged. Reddit widget rendering happens only
+on a reader click inside the isolated Worker adapter; metadata/discovery never executes
+provider HTML, and manual Telegram submissions remain free of editorial filtering.

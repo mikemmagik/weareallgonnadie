@@ -1,5 +1,6 @@
 import { isHttpUrl } from '../../shared/contracts.ts';
 import type { Embed } from '../../shared/contracts.ts';
+import { redditPost } from '../../shared/media.ts';
 
 export function safeUrl(value: unknown): string | null {
   return isHttpUrl(value) ? value : null;
@@ -7,7 +8,7 @@ export function safeUrl(value: unknown): string | null {
 
 export interface Player {
   src: string;
-  shape: 'wide' | 'portrait';
+  shape: 'wide' | 'portrait' | 'reddit';
   provider: string;
 }
 /** Sources are constructed here, never taken from external iframe markup. */
@@ -60,7 +61,16 @@ export function playerFor(embed: Embed | null): Player | null {
       provider: 'Instagram',
     };
   }
-  // Reddit and short/ambiguous URLs retain a safe original link.
+  if (embed.provider === 'reddit') {
+    const post = redditPost(embed.url);
+    if (!post || post.id !== id) return null;
+    return {
+      src: `/embed/reddit?url=${encodeURIComponent(post.url)}`,
+      shape: 'reddit',
+      provider: 'Reddit',
+    };
+  }
+  // Short/ambiguous URLs without a verified provider identity retain original links.
   return null;
 }
 

@@ -37,9 +37,10 @@ YouTube, TikTok, and Instagram players use validated provider-specific paths and
 constructed HTTPS iframe sources. They load only after an explicit click, use a
 sandbox, deny autoplay via Permissions Policy, and retain an original-source link.
 Verified TikTok short-link redirects carry canonical video metadata while the original
-submitted URL remains clickable. Reddit, unresolved short URLs, invalid provider paths,
-and link-only metadata use safe fallback
-cards. Provider availability, consent screens, removals, and browser blocking can
+submitted URL remains clickable. FIX-002 adds Reddit click-to-load widgets in the
+opaque sandboxed `/embed/reddit` Worker adapter, including news and meme cards.
+Unsupported paths/identifiers and unavailable provider content retain fallback links.
+Use the integrated Worker to exercise Reddit; an Astro-only server cannot serve the adapter. Provider availability, consent screens, removals, and browser blocking can
 still prevent playback. Browser tests stub player requests and verify loading and
 fallback behavior; real provider playback requires valid public publications.
 
@@ -53,7 +54,7 @@ breaks. Inline markup and HTML are rendered as inert text. Source/reference link
 accept only HTTP(S) and open with `noopener noreferrer`.
 
 FIX-001 prepares CSP in `public/_headers` and `worker/security.ts`, permitting only
-these frame origins: `https://www.youtube-nocookie.com`, `https://www.tiktok.com`, and
+same-origin Reddit adapter frames plus these provider origins: `https://www.youtube-nocookie.com`, `https://www.tiktok.com`, and
 `https://www.instagram.com`. Scripts/styles and API reads stay same-origin; inline
 scripts and arbitrary third-party scripts are denied. Preview images require public
 HTTPS URL syntax, default ports, no credentials, and no local/reserved address/name.
@@ -101,3 +102,9 @@ confirming homepage 200, API 501, and no production mock posts even with `?demo=
 Screenshots show the explicitly labeled development feed at 1440×1100 and 390×844,
 plus full-feed captures. Provider playback itself remains dependent on public content
 and provider policy. No deployment was performed.
+
+FIX-002 browser integration includes a deterministic widget fixture checking sandbox,
+CSP, parent isolation, attribution, missing metadata and news/meme compatibility.
+`WAAGD_BROWSER_TESTS=1 WAAGD_BROWSER_SESSION=<session> npm run test:backend` runs it
+against actual local HTTP/D1. Add `WAAGD_LIVE_REDDIT=1` for the separate live-provider
+attempt. Provider HTTP failures are recorded as limitations, not mocked success.

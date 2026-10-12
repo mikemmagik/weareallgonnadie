@@ -1,4 +1,8 @@
-/** Public boundary shared by frontend, Worker, and HTTP-only automation clients. */
+/** Public boundary shared by frontend, Worker, and HTTP-only automation clients.
+ * FIX-002: verified TikTok publications persist source="TikTok" and the URL's
+ * numeric video ID as source_item_id; Worker ingestion enforces agreement.
+ * Stored legacy content retains its original fields and is checked at render time.
+ */
 export const CONTRACT_VERSION = 1 as const;
 export const POST_TYPES = ['news', 'video', 'meme', 'changelog'] as const;
 export const POST_ORIGINS = ['auto', 'telegram'] as const;

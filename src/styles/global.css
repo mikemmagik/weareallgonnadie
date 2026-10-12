@@ -421,6 +421,10 @@ dd {
   aspect-ratio: 4 / 3;
   max-height: 440px;
 }
+.embed-media.reddit {
+  aspect-ratio: auto;
+  height: 620px;
+}
 .embed-hint {
   grid-column: 1 / -1;
   margin: 10px 0 0;

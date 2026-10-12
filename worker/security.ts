@@ -1,6 +1,6 @@
 export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   'Content-Security-Policy':
-    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https:; connect-src 'self'; frame-src https://www.youtube-nocookie.com https://www.tiktok.com https://www.instagram.com; base-uri 'none'; object-src 'none'; form-action 'none'; frame-ancestors 'none'",
+    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https:; connect-src 'self'; frame-src 'self' https://www.youtube-nocookie.com https://www.tiktok.com https://www.instagram.com; base-uri 'none'; object-src 'none'; form-action 'none'; frame-ancestors 'none'",
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
   'Permissions-Policy':

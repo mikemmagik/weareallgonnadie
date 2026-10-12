@@ -94,15 +94,14 @@ for (const status of [502, 504])
     assert.ok(await state.read(`outgoing-${payloadKey(payload)}.json`));
   });
 
-test('D03: Reddit retains attribution metadata and fallback; inline remediation remains unresolved', async () => {
-  assert.equal(
+test('D03: Reddit uses an isolated adapter and keeps restricted originals without bypass', async () => {
+  assert.ok(
     playerFor({
       kind: 'provider',
       provider: 'reddit',
       id: 'abc123',
       url: 'https://www.reddit.com/r/test/comments/abc123/title/',
     }),
-    null,
   );
   assert.equal(
     providerEmbed('https://www.reddit.com/r/test/comments/abc123/title/').kind,
@@ -117,7 +116,7 @@ test('D03: Reddit retains attribution metadata and fallback; inline remediation 
     'https://www.reddit.com/r/private/comments/abc123/title/',
     async () => new Response('', { status: 403 }),
   );
-  assert.equal(playerFor(restricted.embed), null);
+  assert.ok(playerFor(restricted.embed));
   assert.equal(
     restricted.url,
     'https://www.reddit.com/r/private/comments/abc123/title/',
