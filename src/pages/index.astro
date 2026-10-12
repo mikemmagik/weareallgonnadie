@@ -1,6 +1,5 @@
 ---
 import '../styles/global.css';
-import { POST_TYPES } from '../../shared/contracts';
 ---
 
 <!doctype html>
@@ -8,14 +7,120 @@ import { POST_TYPES } from '../../shared/contracts';
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="robots" content="noindex" />
-    <title>We Are All Gonna Die</title>
+    <meta
+      name="description"
+      content="The internet's daily evidence that humanity is doomed. One feed. No hope. Just links."
+    />
+    <meta name="theme-color" content="#080b0b" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>We Are All Gonna Die — Doom Monitor</title>
   </head>
   <body>
-    <main>
-      <h1>We Are All Gonna Die</h1>
-      <p>The foundation is ready. Humanity is still loading.</p>
-      <p>Planned publications: {POST_TYPES.join(', ')}.</p>
-    </main>
+    <a class="skip-link" href="#main">
+      Skip to transmissions
+    </a>
+    <div class="monitor-shell">
+      <div class="system-bar" aria-label="System information">
+        <span>
+          <span class="signal-dot"></span> Doom monitor{' '}
+          <span class="muted">/ online</span>
+        </span>
+        <span class="system-build">
+          Earth // build <span id="system-date">2026</span>
+        </span>
+      </div>
+      <header class="masthead">
+        <img
+          class="earth"
+          src="/earth.svg"
+          alt=""
+          width="480"
+          height="480"
+          aria-hidden="true"
+        />
+        <div class="identity">
+          <span class="eyebrow">
+            A live record of our questionable decisions
+          </span>
+          <h1>
+            WE ARE ALL
+            <br />
+            GONNA{' '}
+            <span>
+              DIE<span class="title-period">.</span>
+            </span>
+          </h1>
+          <p class="tagline">
+            The internet's daily evidence that humanity is doomed.
+          </p>
+          <p class="no-hope">No hope. Just links.</p>
+        </div>
+        <div class="status-panel" aria-label="Humanity status: critical">
+          <div class="status-heading">
+            <span>Humanity status</span>
+            <strong>
+              <span class="warning-dot"></span> Critical
+            </strong>
+          </div>
+          <dl>
+            <div>
+              <dt>Intelligence</dt>
+              <dd>Replaced</dd>
+            </div>
+            <div>
+              <dt>Stability</dt>
+              <dd>Declining</dd>
+            </div>
+            <div>
+              <dt>Population</dt>
+              <dd>Unstable</dd>
+            </div>
+            <div>
+              <dt>Plan B</dt>
+              <dd>Not found</dd>
+            </div>
+          </dl>
+          <p class="status-note">System operational. Species questionable.</p>
+        </div>
+      </header>
+      <main id="main">
+        <div class="feed-heading">
+          <h2>
+            <span class="signal-dot"></span> Incoming transmissions
+          </h2>
+          <span id="transmission-count">000 transmissions</span>
+        </div>
+        <p id="demo-notice" class="demo-notice" hidden>
+          Development preview // fictional transmissions
+        </p>
+        <div id="feed" class="feed" aria-busy="true"></div>
+        <div id="feed-sentinel" class="feed-state" data-state="loading">
+          <span class="state-symbol" aria-hidden="true">
+            [<span> · </span>]
+          </span>
+          <p id="feed-message" role="status" aria-live="polite">
+            Searching for additional reasons to panic…
+          </p>
+          <button id="load-more" class="terminal-button" type="button" hidden>
+            Load older transmissions ↓
+          </button>
+        </div>
+        <noscript>
+          <p class="noscript-message">
+            JavaScript is needed to receive the feed. Humanity's other
+            dependencies remain unclear.
+          </p>
+        </noscript>
+      </main>
+      <footer>
+        <span>
+          We are all gonna die <span class="muted">// eventually.</span>
+        </span>
+        <span id="connection-status">Establishing signal</span>
+      </footer>
+    </div>
+    <script>
+      import '../scripts/monitor.ts';
+    </script>
   </body>
 </html>

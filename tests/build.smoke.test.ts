@@ -42,8 +42,25 @@ test(
       'utf8',
     );
     assert.match(html, /We Are All Gonna Die/);
-    assert.match(html, /news, video, meme, changelog/);
-    assert.doesNotMatch(html, /<script\b/i);
+    assert.match(html, /Incoming transmissions/);
+    assert.match(html, /id="feed"/);
+    assert.match(html, /<script type="module"/);
+    assert.doesNotMatch(html, /class="post /);
+    const assets = new URL('../dist/_astro/', import.meta.url);
+    const scripts = readdirSync(assets).filter((name) => name.endsWith('.js'));
+    assert.equal(scripts.length, 1, 'One small native browser module');
+    assert.ok(
+      readdirSync(assets).every((name) => !name.endsWith('.svg')),
+      'Development illustrations are absent from production',
+    );
+    const client = scripts
+      .map((name) => readFileSync(new URL(name, assets), 'utf8'))
+      .join('');
+    assert.doesNotMatch(
+      client,
+      /futurefails|The Daily Signal|dev-page-two|__demo-art/,
+    );
+    assert.ok(client.length < 25000, 'Keep client JavaScript small');
     assert.ok(
       readdirSync(new URL('../build/worker/', import.meta.url)).some((name) =>
         name.endsWith('.js'),
