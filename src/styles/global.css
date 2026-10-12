@@ -1,0 +1,17 @@
+html {
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+}
+body {
+  margin: 0;
+  background: #151515;
+  color: #eee;
+}
+main {
+  max-width: 48rem;
+  margin: 5rem auto;
+  padding: 0 1.5rem;
+}
+a {
+  color: inherit;
+}

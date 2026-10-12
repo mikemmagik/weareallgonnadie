@@ -1,0 +1,40 @@
+{
+  "name": "we-are-all-gonna-die",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0 <25",
+    "npm": ">=11"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "dev:worker": "wrangler dev --local --ip 127.0.0.1 --port 8787",
+    "dev:full": "npm run build:frontend && npm run dev:worker",
+    "preview": "astro preview",
+    "typecheck": "astro check && tsc --noEmit -p worker/tsconfig.json && tsc --noEmit -p tests/tsconfig.json",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "node --test tests/contracts.test.ts tests/worker.test.ts",
+    "test:smoke": "node --test tests/build.smoke.test.ts",
+    "build:frontend": "astro build",
+    "build:worker": "wrangler deploy --dry-run --outdir build/worker",
+    "build": "npm run build:frontend && npm run build:worker",
+    "validate": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run test:smoke"
+  },
+  "dependencies": {
+    "astro": "7.3.8"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "@cloudflare/workers-types": "5.20261012.1",
+    "@types/node": "24.19.2",
+    "eslint": "10.12.0",
+    "prettier": "3.9.10",
+    "prettier-plugin-astro": "1.1.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1",
+    "wrangler": "4.149.0"
+  }
+}

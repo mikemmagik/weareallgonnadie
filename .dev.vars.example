@@ -1,0 +1,3 @@
+# Placeholder only. Copy to .dev.vars for future local authenticated API work.
+# The scaffold does not authenticate or accept writes yet.
+API_WRITE_TOKEN=replace-with-a-local-only-value

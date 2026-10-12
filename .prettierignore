@@ -1,0 +1,9 @@
+node_modules/
+.astro/
+dist/
+build/
+.wrangler/
+.cache/
+work/
+coverage/
+package-lock.json
