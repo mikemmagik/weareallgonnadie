@@ -6,9 +6,11 @@ Existing content will appear in one chronological feed. The local OpenClaw agent
 will eventually discover content, accept already approved Telegram URLs, and submit
 a monthly Humanity Changelog through the API.
 
-**Status:** foundation only. The homepage is a placeholder. Recognized API routes
-return JSON `501 NOT_IMPLEMENTED`; there is no live feed, authentication, database
-schema, discovery, Telegram integration, or changelog generation yet.
+**Status:** Foundation plus BE-001 backend. All four API endpoints, authenticated
+writes, local D1 storage, atomic duplicate handling, soft deletion and cursor pagination
+are implemented. The homepage remains a frontend placeholder. Discovery, Telegram
+integration and changelog generation belong to Automation. See [backend setup and
+integration](worker/README.md).
 
 ## Requirements
 
@@ -39,7 +41,7 @@ frontend; `/api/*` is owned by the Worker, not Astro.
 npm run dev:full
 ```
 
-Builds the frontend, then serves assets and API scaffolds together at
+Builds the frontend, then serves assets and the API together at
 <http://127.0.0.1:8787> using local Workers/D1 simulation. Rebuild the frontend after
 editing it. If Wrangler reports that the assets watcher hit a platform limit,
 rebuild and restart the Worker to see asset changes; this warning occurred in the
@@ -50,9 +52,11 @@ the Worker and expects an existing `dist/` from `npm run build:frontend`.
 curl -i http://127.0.0.1:8787/api/posts
 ```
 
-Expect JSON `501 NOT_IMPLEMENTED`, not a functioning production endpoint. The
-reserved D1 binding does not require a real database. `.dev.vars.example` contains
-only a future local secret placeholder; copying it is optional for this scaffold.
+Apply the database migration first with `npx wrangler d1 migrations apply DB --local`.
+GET returns the public feed as JSON 200. Copy `.dev.vars.example` to `.dev.vars` and
+replace the placeholder with a local-only secret to enable authenticated writes.
+No real Cloudflare database is required. The example's scaffold comments are historical;
+see [backend instructions](worker/README.md) for current behavior.
 
 ## Build and validation
 
@@ -62,7 +66,8 @@ npm run lint
 npm run format:check
 npm test
 npm run test:smoke
-# Or run all of the above:
+node --test tests/backend.integration.test.ts
+# Foundation checks as one command (integration suite remains separate):
 npm run validate
 ```
 
@@ -94,14 +99,14 @@ src/
   env.d.ts                 Astro type references
 public/                    Public build assets (no secrets)
 worker/
-  index.ts                 API routing scaffold and asset fallback
-  env.ts                   Explicit ASSETS, DB, future write-token bindings
+  index.ts                 API routing and asset fallback
+  env.ts                   Explicit ASSETS, DB, write-token bindings
   tsconfig.json            Worker-only type environment
 shared/
   contracts.ts             Post/request/response types and input validation
 db/
-  migrations/              Reserved, no production schema yet
-  README.md                Database boundary and future constraints
+  migrations/              Publication schema, indexes and constraints
+  README.md                Local database setup and constraints
 automation/
   discovery/               Reserved
   telegram/                Reserved

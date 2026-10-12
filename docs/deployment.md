@@ -7,24 +7,26 @@ The committed configuration is local preparation only:
 - Worker name `we-are-all-gonna-die`, entrypoint `worker/index.ts`.
 - Compatibility date `2026-10-12`, without Node compatibility flags.
 - Static Assets from `dist/`, with `ASSETS` binding and API-only Worker-first routing.
-- `DB` binding named `waagd-local` with all-zero sentinel database ID, reserved
-  `db/migrations/`, and `remote: false`.
+- `DB` binding named `waagd-local` with all-zero sentinel database ID, publication
+  migration under `db/migrations/`, and `remote: false`.
 - `workers_dev: false`; no custom domain or account ID is configured.
 
 `wrangler dev --local` simulates bindings locally. The sentinel is not a usable
 production database ID. Use `npm run dev:full` to build assets and start the local
-combined service. No credentials or environment variables are required for this phase.
+combined service after `npx wrangler d1 migrations apply DB --local`. Public reads
+need no credentials; POST/DELETE require a local `API_WRITE_TOKEN` in ignored `.dev.vars`.
+See [backend setup](../worker/README.md).
 
 ## Environment variables and secrets
 
-| Name                    | Local foundation                                         | Future production                                                               |
-| ----------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `API_WRITE_TOKEN`       | Optional `.dev.vars` placeholder; unused by the scaffold | Required secret binding for write/delete authentication; fail closed if missing |
-| `CLOUDFLARE_API_TOKEN`  | Not needed                                               | Deployment-machine secret with least required permissions, never committed      |
-| `CLOUDFLARE_ACCOUNT_ID` | Not needed                                               | Deployment-machine identifier for the approved account                          |
-| Automation API base URL | Not configured                                           | Same-origin site's HTTPS API base, held in local automation configuration       |
-| Automation bearer token | Not configured                                           | Local secret matching the approved Worker write secret                          |
-| Telegram/AI credentials | Not configured                                           | Only in local agent/bot secret storage; never frontend or repository            |
+| Name                    | Local foundation                                       | Future production                                                               |
+| ----------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| `API_WRITE_TOKEN`       | Required in `.dev.vars` for authenticated local writes | Required secret binding for write/delete authentication; fail closed if missing |
+| `CLOUDFLARE_API_TOKEN`  | Not needed                                             | Deployment-machine secret with least required permissions, never committed      |
+| `CLOUDFLARE_ACCOUNT_ID` | Not needed                                             | Deployment-machine identifier for the approved account                          |
+| Automation API base URL | Not configured                                         | Same-origin site's HTTPS API base, held in local automation configuration       |
+| Automation bearer token | Not configured                                         | Local secret matching the approved Worker write secret                          |
+| Telegram/AI credentials | Not configured                                         | Only in local agent/bot secret storage; never frontend or repository            |
 
 `DB` and `ASSETS` are bindings, not frontend environment variables. No `PUBLIC_*`
 secret values are permitted. `.dev.vars` and all environment variants are ignored;
@@ -52,8 +54,8 @@ them. `dist/`, `build/`, and `.wrangler/` are ignored generated files.
 
 ## Later deployment outline — not performed in this task
 
-Deployment needs a separate request and the backend implementation. Do not deploy
-this scaffold as a working content site.
+Deployment still needs a separate request. BE-001 implements the backend locally;
+the frontend remains a placeholder, and no production resources are configured.
 
 1. Run validation and review the artifact and source revision. Review current Free
    limits, security headers, logs, write authentication, and D1 schema constraints.

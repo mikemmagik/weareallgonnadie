@@ -1,13 +1,16 @@
-# Foundation handoff
+# Foundation and backend handoff
+
+BE-001 is implemented on `feat/backend`. See [backend setup, tests and consumer
+integration](../worker/README.md). The Foundation verification below is historical.
 
 ## Backend agent
 
-Read `shared/contracts.ts` and `docs/api.md` before implementing the four reserved
-routes. Add reviewed D1 migrations, parameterized SQL, immutable UTC insertion time,
-UUID tie-breakers, atomic uniqueness, soft deletion, bounded input, and fail-closed
-bearer authentication. Preserve duplicate-as-success semantics, including deleted
-matches. Test database constraints, pagination ties, auth failures and retries using
-local D1. Production resources and deployment need a separate request.
+The four documented routes are implemented against the unchanged shared contracts.
+Apply `db/migrations/0001_posts.sql` using Wrangler `--local` before development, and
+configure `API_WRITE_TOKEN` in ignored `.dev.vars` for writes. The separate local D1
+HTTP integration suite exercises migrations, constraints, CRUD, pagination ties,
+authentication, concurrency and deletion. Production resources and deployment still
+need a separate request.
 
 ## Frontend agent
 
@@ -28,9 +31,9 @@ changelogs. Keep all credentials local. Discovery and generation remain unimplem
 ## Shared governance and remaining work
 
 No role may independently change shared contracts. Coordinate changes with the project
-owner and update types, docs, tests and all consumers together. The D1 schema,
-production authentication/API logic, final UI and all automation are intentionally
-pending, not failures of the foundation. Local validation outcomes and the created
+owner and update types, docs, tests and all consumers together. The final UI,
+automation and production deployment remain pending. The D1 schema and API/authentication
+logic are now implemented, without creating production resources. Local validation outcomes and the created
 file inventory are reported with the initialization delivery.
 
 ## Verified at delivery
