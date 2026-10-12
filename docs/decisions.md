@@ -29,3 +29,15 @@ No schema migration is created before backend work. No CI provider, remote Git
 repository, scheduler, production resource, or deployment is configured. Runtime
 limits and security headers for future embedded rendering must be reviewed when
 that rendering and production deployment are requested.
+
+## BE-001 implementation
+
+Backend implementation was subsequently authorized. The four reserved routes now
+implement contract v1; the historical scaffold decision above describes Foundation.
+D1 uses strict storage, two permanent duplicate indexes and a visible-feed index.
+POST performs a targeted conflict-ignore insert and duplicate lookup in one D1 batch
+transaction. DELETE atomically preserves the first deletion timestamp. Authentication
+uses Web Crypto HMAC verification before parsing or persistence. No dependency,
+Foundation configuration or public contract changed. Query parameter preservation
+remains the approved canonicalization rule; tracking removal is deferred for owner
+review. See [backend implementation](../worker/README.md).
