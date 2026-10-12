@@ -1,0 +1,11 @@
+{
+  "id": "waagd-telegram",
+  "name": "WAAGD deterministic Telegram publishing",
+  "description": "Runs the separate project Telegram poller without an editorial AI turn.",
+  "activation": { "onStartup": true },
+  "configSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  }
+}
