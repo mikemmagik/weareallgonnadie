@@ -1,6 +1,19 @@
 import { isHttpUrl } from '../../shared/contracts.ts';
 import type { Embed } from '../../shared/contracts.ts';
 import { redditPost } from '../../shared/media.ts';
+import { publicPreviewUrl } from '../../shared/preview.ts';
+
+/** Same-origin assets may load normally; external previews retain the shared policy. */
+export function previewFor(value: unknown, origin: string) {
+  if (!safeUrl(value)) return null;
+  const url = new URL(value as string);
+  if (url.origin === origin)
+    return { url: url.href, external: false, provider: url.hostname };
+  const safe = publicPreviewUrl(value);
+  return safe
+    ? { url: safe, external: true, provider: new URL(safe).hostname }
+    : null;
+}
 
 export function safeUrl(value: unknown): string | null {
   return isHttpUrl(value) ? value : null;

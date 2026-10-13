@@ -55,6 +55,16 @@ export async function verifyMvp(page, scenario) {
         .count()) > 0,
       'FIX: unsafe preview keeps original links',
     );
+    check(
+      (await publicPreview.locator('img').count()) === 0 &&
+        !previewRequests.some((url) =>
+          url.startsWith('https://images.example/'),
+        ),
+      'LEGAL: public preview makes no request before consent',
+    );
+    await publicPreview
+      .getByRole('button', { name: /Load external image/ })
+      .click();
     await publicPreview.locator('img').waitFor();
     check(
       (await publicPreview.locator('img').getAttribute('src')) ===
@@ -70,7 +80,7 @@ export async function verifyMvp(page, scenario) {
         .locator(
           'a[href="https://www.reddit.com/r/test/comments/abc123/title/"]',
         )
-        .count()) === 2,
+        .count()) === 3,
       'D03: source attribution and original link remain',
     );
     await short.locator('button.load-player').click();

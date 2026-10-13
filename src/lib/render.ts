@@ -1,9 +1,9 @@
 import type { Post } from '../../shared/contracts.ts';
-import { publicPreviewUrl } from '../../shared/preview.ts';
 import { redditPost } from '../../shared/media.ts';
 import {
   changelogBlocks,
   playerFor,
+  previewFor,
   relativeDate,
   safeUrl,
 } from './presentation.ts';
@@ -29,29 +29,35 @@ function externalLink(
   link.rel = 'noopener noreferrer';
   return link;
 }
-function imageFor(post: Post): HTMLImageElement | null {
-  const url = publicPreviewUrl(post.preview?.image_url);
-  if (!url) return null;
-  const image = element('img', 'preview-image');
-  image.src = url;
-  image.alt = post.preview?.alt_text ?? '';
-  image.loading = 'lazy';
-  image.decoding = 'async';
-  image.width = 800;
-  image.height = 450;
-  image.referrerPolicy = 'no-referrer';
-  image.addEventListener(
-    'error',
-    () => {
-      image.hidden = true;
-      image.parentElement?.classList.add('image-unavailable');
-    },
-    { once: true },
+/** Neutral notice built with text nodes; provider labels never become markup. */
+function mediaConsent(
+  provider: string,
+  original: string | null,
+  label: string,
+  load: () => void,
+): HTMLElement {
+  const notice = element('div', 'media-consent');
+  notice.append(
+    element('h3', 'consent-heading', 'LOAD EXTERNAL CONTENT'),
+    element(
+      'p',
+      'consent-description',
+      `This content is hosted by ${provider}. Loading it may share your IP address with the provider and allow third-party cookies.`,
+    ),
   );
-  return image;
+  const actions = element('div', 'consent-actions');
+  const button = element('button', 'load-player', 'LOAD CONTENT');
+  button.type = 'button';
+  button.setAttribute('aria-label', label);
+  button.addEventListener('click', load, { once: true });
+  actions.append(button);
+  if (original) actions.append(externalLink(original, 'OPEN ORIGINAL'));
+  notice.append(actions);
+  return notice;
 }
+
 function mediaFor(post: Post): HTMLElement | null {
-  const image = imageFor(post);
+  const preview = previewFor(post.preview?.image_url, location.origin);
   const original = safeUrl(post.url) ?? safeUrl(post.embed?.url);
   const reddit = redditPost(post.url);
   const player =
@@ -64,101 +70,110 @@ function mediaFor(post: Post): HTMLElement | null {
           url: reddit.url,
         })
       : null);
-  if (post.type === 'news' && player?.provider !== 'Reddit') {
-    if (!image || !original) return null;
-    const media = externalLink(original, '', 'media news-media');
-    media.setAttribute('aria-label', `Read original: ${post.title}`);
-    media.append(image);
+  if (player && (post.type !== 'news' || player.provider === 'Reddit')) {
+    const media = element('div', `media embed-media ${player.shape}`);
     media.append(
-      element(
-        'span',
-        'image-fallback',
-        'Preview unavailable · open original ↗',
-      ),
-    );
-    return media;
-  }
-  if (post.type === 'meme' && image && !player) {
-    const media = original
-      ? externalLink(original, '', 'media meme-media')
-      : element('div', 'media meme-media');
-    media.setAttribute('aria-label', `View original: ${post.title}`);
-    media.append(
-      image,
-      element('span', 'image-fallback', 'Image unavailable · open original ↗'),
-    );
-    return media;
-  }
-  const media = element('div', `media embed-media ${player?.shape ?? 'wide'}`);
-  if (image) media.append(image);
-  if (player) {
-    const button = element('button', 'load-player');
-    button.type = 'button';
-    button.setAttribute(
-      'aria-label',
-      `Load ${player.provider} embed: ${post.title}`,
-    );
-    button.append(
-      element('span', 'play-icon', '▶'),
-      element('span', 'player-label', `Load ${player.provider}`),
-      element('span', 'player-privacy', 'External player · loads on click'),
-    );
-    button.addEventListener(
-      'click',
-      () => {
-        const frame = element('iframe', 'player-frame');
-        frame.title = `${player.provider}: ${post.title}`;
-        frame.src = player.src;
-        frame.loading = 'lazy';
-        frame.referrerPolicy = 'no-referrer';
-        frame.setAttribute(
-          'sandbox',
-          player.provider === 'Reddit'
-            ? 'allow-scripts allow-popups'
-            : 'allow-scripts allow-same-origin allow-presentation allow-popups',
-        );
-        frame.allow =
-          player.provider === 'Reddit'
-            ? "autoplay 'none'; camera 'none'; microphone 'none'; fullscreen 'none'; clipboard-read 'none'; clipboard-write 'none'"
-            : "autoplay 'none'; fullscreen; picture-in-picture";
-        // Keep a source escape hatch visible even when the provider blocks playback.
-        media.replaceChildren(frame);
-        const hint = element(
-          'p',
-          'embed-hint',
-          'Player blocked or unavailable? ',
-        );
-        if (original) hint.append(externalLink(original, 'Open original ↗'));
-        media.after(hint);
-        frame.addEventListener(
-          'error',
-          () =>
-            media.replaceChildren(
-              element(
-                'p',
-                'media-fallback',
-                'Player unavailable. Open the original below.',
+      mediaConsent(
+        player.provider,
+        original,
+        `Load ${player.provider} embed: ${post.title}`,
+        () => {
+          const frame = element('iframe', 'player-frame');
+          frame.title = `${player.provider}: ${post.title}`;
+          frame.src = player.src;
+          frame.loading = 'lazy';
+          frame.referrerPolicy = 'no-referrer';
+          frame.setAttribute(
+            'sandbox',
+            player.provider === 'Reddit'
+              ? 'allow-scripts allow-popups'
+              : 'allow-scripts allow-same-origin allow-presentation allow-popups',
+          );
+          frame.allow =
+            player.provider === 'Reddit'
+              ? "autoplay 'none'; camera 'none'; microphone 'none'; fullscreen 'none'; clipboard-read 'none'; clipboard-write 'none'"
+              : "autoplay 'none'; fullscreen; picture-in-picture";
+          media.replaceChildren(frame);
+          const hint = element(
+            'p',
+            'embed-hint',
+            'Player blocked or unavailable? ',
+          );
+          if (original) hint.append(externalLink(original, 'Open original ↗'));
+          media.after(hint);
+          frame.addEventListener(
+            'error',
+            () =>
+              media.replaceChildren(
+                element(
+                  'p',
+                  'media-fallback',
+                  'Player unavailable. Open the original below.',
+                ),
               ),
-            ),
-          { once: true },
-        );
-      },
-      { once: true },
-    );
-    media.append(button);
-  } else if (original) {
-    const link = externalLink(original, '', 'load-player fallback-player');
-    link.append(
-      element('span', 'play-icon', post.type === 'video' ? '↗' : '▧'),
-      element('span', 'player-label', 'Open original'),
-      element(
-        'span',
-        'player-privacy',
-        'Preview unavailable. Reality persists.',
+            { once: true },
+          );
+        },
       ),
     );
-    media.append(link);
-  } else return null;
+    return media;
+  }
+  if (preview) {
+    const media = element(
+      'div',
+      `media ${post.type === 'news' ? 'news-media' : 'meme-media'}`,
+    );
+    const load = () => {
+      const image = element('img', 'preview-image');
+      image.alt = post.preview?.alt_text ?? '';
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      image.width = 800;
+      image.height = 450;
+      image.referrerPolicy = 'no-referrer';
+      const fallback = element('p', 'image-fallback', 'Preview unavailable. ');
+      fallback.setAttribute('role', 'status');
+      if (original) fallback.append(externalLink(original, 'Open original ↗'));
+      image.addEventListener(
+        'error',
+        () => {
+          image.hidden = true;
+          media.classList.add('image-unavailable');
+        },
+        { once: true },
+      );
+      // Assign src only inside this action (or for a validated same-origin asset).
+      image.src = preview.url;
+      const destination = original
+        ? externalLink(original, '', 'preview-link')
+        : element('div', 'preview-link');
+      if (original)
+        destination.setAttribute('aria-label', `View original: ${post.title}`);
+      destination.append(image);
+      media.replaceChildren(destination, fallback);
+    };
+    if (preview.external)
+      media.append(
+        mediaConsent(
+          preview.provider,
+          original,
+          `Load external image: ${post.title}`,
+          load,
+        ),
+      );
+    else load();
+    return media;
+  }
+  if (post.type === 'news') return null;
+  if (!original) return null;
+  const media = element('div', 'media embed-media wide');
+  const link = externalLink(original, '', 'load-player fallback-player');
+  link.append(
+    element('span', 'play-icon', '↗'),
+    element('span', 'player-label', 'Open original'),
+    element('span', 'player-privacy', 'Preview unavailable.'),
+  );
+  media.append(link);
   return media;
 }
 
@@ -250,7 +265,16 @@ export function renderPost(post: Post, index: number): HTMLElement {
   if (post.type !== 'changelog') {
     const media = mediaFor(post);
     if (media) article.append(media);
-    else article.classList.add('text-only');
+    else {
+      article.classList.add('text-only');
+      content.append(
+        element(
+          'p',
+          'post-preview',
+          'Preview unavailable. Use the original source link.',
+        ),
+      );
+    }
   }
   return article;
 }

@@ -1,0 +1,39 @@
+---
+import '../styles/global.css';
+import LegalLinks from '../components/LegalLinks.astro';
+interface Props {
+  title: string;
+  description: string;
+}
+const { title, description } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#080b0b" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title} — We Are All Gonna Die</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">
+      Skip to information
+    </a>
+    <div class="monitor-shell">
+      <header class="information-header">
+        <a href="/">← Doom Monitor</a>
+      </header>
+      <main id="main" class="information-page">
+        <h1>{title}</h1>
+        <slot />
+      </main>
+      <footer>
+        <span>We Are All Gonna Die</span>
+        <LegalLinks />
+      </footer>
+    </div>
+  </body>
+</html>

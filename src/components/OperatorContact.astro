@@ -1,0 +1,20 @@
+---
+import { operator, contactHref } from '../lib/legal';
+const contact = contactHref(operator);
+---
+
+<p>
+  Operator:{' '}
+  {operator.identity ?? 'Not yet configured. Required before public launch.'}
+</p>
+{contact ? (
+  <p>
+    Email for content removal, copyright complaints and privacy questions:{' '}
+    <a href={contact}>{operator.contactEmail}</a>
+  </p>
+) : (
+  <p class="configuration-notice">
+    Contact email is not yet available. A working, verified contact must be
+    configured before public launch.
+  </p>
+)}

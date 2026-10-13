@@ -45,6 +45,28 @@ test(
     assert.match(html, /Incoming transmissions/);
     assert.match(html, /id="feed"/);
     assert.match(html, /<script type="module"/);
+    assert.match(html, /DISCLAIMER — NOT A NEWS OUTLET/);
+    assert.match(
+      html,
+      /This is not a news outlet\. This website is a satirical collection of third-party content, memes, and commentary\. Refer to original sources for factual information\./,
+    );
+    for (const route of ['legal', 'privacy']) {
+      const page = readFileSync(
+        new URL(`../dist/${route}/index.html`, import.meta.url),
+        'utf8',
+      );
+      assert.match(page, /<main id="main"/);
+      assert.match(page, /working, verified contact must be/);
+      assert.match(page, /href="\/legal#contact"/);
+      assert.doesNotMatch(page, /mailto:/);
+      assert.doesNotMatch(page, /<script/);
+    }
+    for (const [href, label] of [
+      ['/legal', 'LEGAL'],
+      ['/privacy', 'PRIVACY'],
+      ['/legal#contact', 'CONTACT'],
+    ])
+      assert.match(html, new RegExp(`href="${href}">${label}</a>`));
     assert.doesNotMatch(html, /class="post /);
     const assets = new URL('../dist/_astro/', import.meta.url);
     const scripts = readdirSync(assets).filter((name) => name.endsWith('.js'));

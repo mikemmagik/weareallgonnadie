@@ -1,5 +1,7 @@
 ---
 import '../styles/global.css';
+import LegalLinks from '../components/LegalLinks.astro';
+import { DISCLAIMER_HEADING, DISCLAIMER_TEXT } from '../lib/legal';
 ---
 
 <!doctype html>
@@ -83,6 +85,11 @@ import '../styles/global.css';
           <p class="status-note">System operational. Species questionable.</p>
         </div>
       </header>
+      <section class="site-disclaimer" aria-labelledby="disclaimer-heading">
+        <h2 id="disclaimer-heading">{DISCLAIMER_HEADING}</h2>
+        <p>{DISCLAIMER_TEXT}</p>
+        <a href="/legal">Read full disclaimer</a>
+      </section>
       <main id="main">
         <div class="feed-heading">
           <h2>
@@ -128,6 +135,7 @@ import '../styles/global.css';
           We are all gonna die <span class="muted">// eventually.</span>
         </span>
         <span id="connection-status">Establishing signal</span>
+        <LegalLinks />
       </footer>
     </div>
     <script>

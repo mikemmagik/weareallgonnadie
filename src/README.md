@@ -60,8 +60,8 @@ scripts and arbitrary third-party scripts are denied. Preview images require pub
 HTTPS URL syntax, default ports, no credentials, and no local/reserved address/name.
 Unsafe previews render without an image, including old API records. Direct browser
 image DNS/redirect destinations cannot be pinned by this renderer; see the remediation
-handoff for that remaining limit. Local development illustrations targeting loopback
-are consequently suppressed; browser fixture images use mocked public HTTPS URLs.
+handoff for that remaining limit. Same-origin development illustrations may load normally; external browser fixture
+images use mocked public HTTPS URLs and require a click.
 INT-001 preserves wire fields and the renderers while integrating permalink reads.
 
 ## Validation
@@ -108,3 +108,16 @@ CSP, parent isolation, attribution, missing metadata and news/meme compatibility
 `WAAGD_BROWSER_TESTS=1 WAAGD_BROWSER_SESSION=<session> npm run test:backend` runs it
 against actual local HTTP/D1. Add `WAAGD_LIVE_REDDIT=1` for the separate live-provider
 attempt. Provider HTTP failures are recorded as limitations, not mocked success.
+
+## LEGAL-001 disclaimer and media privacy
+
+A persistent disclaimer, `/legal`, `/privacy` and footer contact links now accompany
+the feed. Configure public operator fields in `src/lib/legal.ts` and verify a real
+mailbox before launch. External preview images require LOAD CONTENT, as do player
+frames; permission is per item and resets on reload. Embed previews are not fetched
+separately. First-party assets may load normally. See the
+[LEGAL-001 handoff](../docs/legal-001-handoff.md) for configuration/blockers.
+
+Run `WAAGD_BROWSER_SESSION=<session> node tests/legal.browser.mjs <local-origin>`
+for additional browser checks. The optional backend browser suite also executes
+these checks against production assets.

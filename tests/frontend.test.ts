@@ -10,9 +10,64 @@ import {
 import {
   changelogBlocks,
   playerFor,
+  previewFor,
   relativeDate,
   safeUrl,
 } from '../src/lib/presentation.ts';
+import { contactHref, operator } from '../src/lib/legal.ts';
+
+test('legal contact stays unavailable until a valid mailbox is explicitly verified', () => {
+  assert.equal(contactHref(operator), null);
+  for (const email of [
+    null,
+    '',
+    'not-an-email',
+    'a@b.org?subject=bad',
+    'a@b.org\nBcc:other@b.org',
+  ])
+    assert.equal(
+      contactHref({
+        identity: null,
+        contactEmail: email,
+        contactVerified: true,
+      }),
+      null,
+    );
+  const configured = {
+    identity: 'Test operator',
+    contactEmail: 'contact@operator-domain.org',
+    contactVerified: false,
+  };
+  assert.equal(contactHref(configured), null);
+  assert.equal(
+    contactHref({ ...configured, contactVerified: true }),
+    'mailto:contact%40operator-domain.org',
+  );
+});
+
+test('preview policy permits same-origin assets and retains external URL suppression', () => {
+  const origin = 'http://127.0.0.1:4321';
+  assert.deepEqual(previewFor(`${origin}/earth.svg`, origin), {
+    url: `${origin}/earth.svg`,
+    external: false,
+    provider: '127.0.0.1',
+  });
+  assert.deepEqual(previewFor('https://images.example/public.svg', origin), {
+    url: 'https://images.example/public.svg',
+    external: true,
+    provider: 'images.example',
+  });
+  for (const value of [
+    null,
+    'javascript:alert(1)',
+    'http://images.example/a',
+    'https://127.0.0.1/a',
+    'https://private.local/a',
+    'https://images.example:8443/a',
+    'https://user:pass@images.example/a',
+  ])
+    assert.equal(previewFor(value, origin), null);
+});
 
 export function fixture(index = 1): Post & { type: 'news'; url: string } {
   return {

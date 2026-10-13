@@ -1,0 +1,10 @@
+---
+import { operator, contactHref } from '../lib/legal';
+const contact = contactHref(operator);
+---
+
+<nav class="legal-links" aria-label="Legal information">
+  <a href="/legal">LEGAL</a>
+  <a href="/privacy">PRIVACY</a>
+  <a href={contact ?? '/legal#contact'}>CONTACT</a>
+</nav>

@@ -173,6 +173,8 @@ test(
           assert.ok(style);
           for (const [path, init] of [
             ['/', undefined],
+            ['/legal', undefined],
+            ['/privacy', undefined],
             [script, undefined],
             [style, undefined],
             ['/favicon.svg', undefined],
@@ -1326,6 +1328,12 @@ test(
               console.log(stdout.trim());
             }
 
+            const { stdout: legalChecks } = await promisify(execFile)(
+              process.execPath,
+              [join(root, 'tests/legal.browser.mjs'), base],
+              { cwd: root, encoding: 'utf8', maxBuffer: 2_000_000 },
+            );
+            console.log(legalChecks.trim());
             assert.equal(
               (await fetch(base)).status,
               200,

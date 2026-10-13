@@ -159,3 +159,13 @@ Cloudflare deployment. Local Wrangler/browser results do not establish edge/TLS/
 behavior. Live Reddit may return 403 or impose eligibility/cookie/geographic restrictions;
 review the FIX-002 handoff before declaring production acceptance. The unchanged
 external-preview DNS/redirect limitation still needs an explicit product decision.
+
+## LEGAL-001 launch prerequisites
+
+Complete and verify public operator identity/mailbox in `src/lib/legal.ts`, rebuild,
+and review applicable disclosure, privacy, retention and content-rights requirements.
+Review actual Cloudflare logs/security cookies and email-provider processing before
+updating the privacy notice. `/legal` and `/privacy` inherit existing static headers;
+Worker/Reddit headers remain unchanged. Click-to-load reduces unsolicited requests
+but does not remove the post-consent preview DNS/redirect risk. Existing QA blockers
+remain; see [LEGAL-001 handoff](legal-001-handoff.md).
