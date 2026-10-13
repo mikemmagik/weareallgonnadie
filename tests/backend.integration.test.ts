@@ -459,6 +459,198 @@ test(
       await reset();
 
       await t.test(
+        'FIX-003 every legacy TikTok identity agrees, including tombstones and concurrent aliases',
+        async (s) => {
+          const videoA = '6718335390845095173';
+          const videoB = '7420000000000000001';
+          const canonical = (id: string) =>
+            `https://www.tiktok.com/@legacy/video/${id}`;
+          const embed = (id: string, urlId = id): Post['embed'] => ({
+            kind: 'provider',
+            provider: 'tiktok',
+            id,
+            url: canonical(urlId),
+          });
+          const payload = await prepareUrl(
+            canonical(videoA),
+            async () => new Response(''),
+          );
+          const cases: {
+            name: string;
+            seed: Partial<
+              Pick<Post, 'url' | 'source' | 'source_item_id' | 'embed'>
+            >;
+            status: number;
+          }[] = [
+            {
+              name: 'original without optional metadata',
+              seed: {},
+              status: 200,
+            },
+            {
+              name: 'all identities agree',
+              seed: {
+                source: 'tIkToK',
+                source_item_id: videoA,
+                embed: embed(videoA),
+              },
+              status: 200,
+            },
+            {
+              name: 'short original with consistent embed',
+              seed: {
+                url: 'https://vt.tiktok.com/legacy-consistent/',
+                embed: embed(videoA),
+              },
+              status: 200,
+            },
+            {
+              name: 'source ID in another namespace',
+              seed: { source: 'Legacy importer', source_item_id: 'import-123' },
+              status: 200,
+            },
+            {
+              name: 'fallback link has no provider identity claim',
+              seed: {
+                embed: { kind: 'link', url: canonical(videoB), label: null },
+              },
+              status: 200,
+            },
+            {
+              name: 'original A with embed ID and URL B',
+              seed: { embed: embed(videoB) },
+              status: 400,
+            },
+            {
+              name: 'original A with embed ID B and URL A',
+              seed: { embed: embed(videoB, videoA) },
+              status: 400,
+            },
+            {
+              name: 'original A with embed ID A and URL B',
+              seed: { embed: embed(videoA, videoB) },
+              status: 400,
+            },
+            {
+              name: 'original A with TikTok source ID B',
+              seed: { source: 'tIkToK', source_item_id: videoB },
+              status: 400,
+            },
+            {
+              name: 'short original with embed A and TikTok source ID B',
+              seed: {
+                url: 'https://vm.tiktok.com/legacy-conflict/',
+                source: 'TikTok',
+                source_item_id: videoB,
+                embed: embed(videoA),
+              },
+              status: 400,
+            },
+            {
+              name: 'original B with embed A',
+              seed: { url: canonical(videoB), embed: embed(videoA) },
+              status: 400,
+            },
+            {
+              name: 'source ID alone does not verify an unresolved original',
+              seed: {
+                url: 'https://vt.tiktok.com/legacy-unresolved/',
+                source: 'TikTok',
+                source_item_id: videoA,
+              },
+              status: 400,
+            },
+          ];
+          for (const scenario of cases)
+            for (const deleted of [false, true])
+              await s.test(
+                `${scenario.name} (${deleted ? 'deleted' : 'active'})`,
+                async () => {
+                  await reset();
+                  const id = crypto.randomUUID();
+                  const original = scenario.seed.url ?? canonical(videoA);
+                  const deletedAt = deleted ? '2026-10-13T00:00:00.000Z' : null;
+                  await db
+                    .prepare(
+                      `INSERT INTO posts (id,type,url,canonical_url,source_item_id,title,source,origin,preview,embed,body,"references",published_at,deleted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                    )
+                    .bind(
+                      id,
+                      'video',
+                      original,
+                      original,
+                      scenario.seed.source_item_id ?? null,
+                      'Private legacy review fixture',
+                      scenario.seed.source ?? 'www.tiktok.com',
+                      'telegram',
+                      null,
+                      scenario.seed.embed
+                        ? JSON.stringify(scenario.seed.embed)
+                        : null,
+                      null,
+                      '[]',
+                      '2026-10-12T00:00:00.000Z',
+                      deletedAt,
+                    )
+                    .run();
+                  const before = await db
+                    .prepare('SELECT * FROM posts WHERE id = ?')
+                    .bind(id)
+                    .first();
+                  const urls = [
+                    canonical(videoA),
+                    'https://vt.tiktok.com/fix003/',
+                    'https://vm.tiktok.com/fix003/',
+                  ];
+                  const responses = await Promise.all(
+                    Array.from({ length: 6 }, (_, index) =>
+                      create({ ...payload, url: urls[index % 3]! }),
+                    ),
+                  );
+                  for (const result of responses) {
+                    assert.equal(result.status, scenario.status);
+                    if (scenario.status === 200) {
+                      assert.equal(result.data.outcome, 'duplicate');
+                      assert.equal(result.data.post.id, id);
+                      assert.equal(result.data.post.url, original);
+                      assert.equal(result.data.post.deleted_at, deletedAt);
+                    } else
+                      assert.deepEqual(result.error, {
+                        code: 'VALIDATION_ERROR',
+                        message:
+                          'Existing TikTok identity requires data review.',
+                      });
+                  }
+                  assert.equal(
+                    await db
+                      .prepare('SELECT COUNT(*) AS n FROM posts')
+                      .first<number>('n'),
+                    1,
+                    'Concurrent duplicates/conflicts never insert another row',
+                  );
+                  assert.deepEqual(
+                    await db
+                      .prepare('SELECT * FROM posts WHERE id = ?')
+                      .bind(id)
+                      .first(),
+                    before,
+                    'All legacy fields and deletion state remain unchanged',
+                  );
+                  assert.equal(
+                    (await api<Post>(`/${id}`)).status,
+                    deleted ? 404 : 200,
+                  );
+                  assert.equal(
+                    (await api<PostsPage>('')).data.posts.length,
+                    deleted ? 0 : 1,
+                  );
+                },
+              );
+        },
+      );
+      await reset();
+
+      await t.test(
         'FIX-002 Reddit adapter HTTP and scoped headers',
         async () => {
           const original =

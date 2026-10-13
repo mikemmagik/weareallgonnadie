@@ -152,14 +152,23 @@ export async function createPost(
   if (tikTokId) {
     const legacy = post(match);
     const originalId = tikTokVideoId(legacy.url);
-    const embedId =
-      legacy.embed?.kind === 'provider' &&
-      legacy.embed.provider === 'tiktok' &&
-      legacy.embed.id === tikTokId &&
-      tikTokVideoId(legacy.embed.url) === tikTokId;
+    const embed =
+      legacy.embed?.kind === 'provider' && legacy.embed.provider === 'tiktok'
+        ? legacy.embed
+        : null;
+    const embedUrlId = tikTokVideoId(embed?.url);
+    // Source IDs belong to their namespace; optional metadata makes no claim when absent.
+    const sourceId =
+      legacy.source.toLowerCase() === 'tiktok' ? legacy.source_item_id : null;
+    // A verified match must never override another identity claimed by the same row.
     if (
-      !(originalId === tikTokId || embedId) ||
-      (originalId && originalId !== tikTokId)
+      !(
+        originalId === tikTokId ||
+        (embed?.id === tikTokId && embedUrlId === tikTokId)
+      ) ||
+      [originalId, sourceId, embed?.id, embedUrlId].some(
+        (identity) => identity != null && identity !== tikTokId,
+      )
     )
       throw new ApiError(
         'VALIDATION_ERROR',
