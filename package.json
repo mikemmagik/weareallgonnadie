@@ -12,16 +12,19 @@
     "dev:worker": "wrangler dev --local --ip 127.0.0.1 --port 8787",
     "dev:full": "npm run build:frontend && npm run dev:worker",
     "preview": "astro preview",
-    "typecheck": "astro check && tsc --noEmit -p worker/tsconfig.json && tsc --noEmit -p tests/tsconfig.json",
+    "typecheck": "astro check && tsc --noEmit -p worker/tsconfig.json && tsc --noEmit -p tests/tsconfig.json && tsc --noEmit -p automation/tsconfig.json",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "node --test tests/contracts.test.ts tests/worker.test.ts",
+    "test": "node --test tests/contracts.test.ts tests/worker.test.ts tests/frontend.test.ts tests/media.test.ts automation/tests/*.test.ts",
     "test:smoke": "node --test tests/build.smoke.test.ts",
     "build:frontend": "astro build",
     "build:worker": "wrangler deploy --dry-run --outdir build/worker",
     "build": "npm run build:frontend && npm run build:worker",
-    "validate": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run test:smoke"
+    "validate": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run test:smoke && npm run test:backend",
+    "test:backend": "node --test tests/backend.integration.test.ts",
+    "test:browser": "node tests/frontend.browser.mjs",
+    "db:init": "wrangler d1 migrations apply DB --local"
   },
   "dependencies": {
     "astro": "7.3.8"

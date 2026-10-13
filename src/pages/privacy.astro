@@ -1,0 +1,130 @@
+---
+import Information from '../layouts/Information.astro';
+import OperatorContact from '../components/OperatorContact.astro';
+---
+
+<Information
+  title="Privacy information"
+  description="How hosting, source links and optional external media affect your privacy."
+>
+  <p>
+    This describes the current implementation. Operator identity and verified
+    contact information must be completed before public launch.
+  </p>
+  <section aria-labelledby="hosting">
+    <h2 id="hosting">Hosting and request information</h2>
+    <p>
+      The website is prepared for Cloudflare Workers hosting with static assets
+      and a publication database. Visiting the website or reading its feed sends
+      basic network information to the hosting provider, including your IP
+      address, requested URL, request time and browser request headers.
+      Cloudflare may process request and security logs to deliver and protect
+      the service.
+    </p>
+    <p>
+      The application has no visitor accounts, analytics, advertising or
+      tracking pixels. Its publication database stores feed content, rather than
+      visitor profiles. This does not mean that no information is collected by
+      hosting or external providers.
+    </p>
+    <p>
+      Retention of hosting logs depends on the provider and deployed
+      configuration. No site-specific retention period is stated here until the
+      operator has reviewed that configuration. See{' '}
+      <a
+        href="https://www.cloudflare.com/privacypolicy/"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Cloudflare's privacy policy
+      </a>
+      .
+    </p>
+  </section>
+  <section aria-labelledby="links">
+    <h2 id="links">Third-party source links</h2>
+    <p>
+      Opening an original source takes you to another website, which receives
+      your network request and applies its own privacy practices. External links
+      use referrer restrictions to avoid sending the referring page URL.
+    </p>
+  </section>
+  <section aria-labelledby="media">
+    <h2 id="media">External images and embeds</h2>
+    <p>
+      Third-party preview images and players load only after you choose LOAD
+      CONTENT on that item. First-party images may load normally. Choosing OPEN
+      ORIGINAL instead visits the source directly.
+    </p>
+    <p>
+      Loading an image sends your IP address and browser request information to
+      its image host, which may differ from the original publisher. Images are
+      requested directly, without a proxy or rehosting.
+    </p>
+    <p>
+      Optional YouTube, TikTok and Instagram players load in restricted frames.
+      Reddit's official widget runs in a separate sandbox that cannot access the
+      parent page's DOM. Loading these embeds sends requests to the provider and
+      may cause additional requests to its service partners. The provider may
+      receive request information, recognize an existing account, or use cookies
+      and similar technologies, subject to your browser settings. No provider
+      scripts or frames load before your action.
+    </p>
+    <p>
+      The notice names the validated player provider or image hostname.
+      Permission applies to that item on the current page; it is not saved
+      between visits. Reloading the page requires another choice. Leaving media
+      unloaded avoids those media requests.
+    </p>
+  </section>
+  <section aria-labelledby="cookies">
+    <h2 id="cookies">Cookies and similar technologies</h2>
+    <p>
+      The current application code does not set visitor cookies or store
+      media-loading choices in local storage. Cloudflare security features, if
+      enabled for a deployment, may use cookies. Loaded third-party content may
+      set or read cookies or other browser storage. Browser settings can
+      restrict these technologies, which may affect playback. See{' '}
+      <a
+        href="https://developers.cloudflare.com/fundamentals/reference/policies-compliances/cloudflare-cookies/"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Cloudflare's cookie information
+      </a>{' '}
+      and each provider's policies.
+    </p>
+  </section>
+  <section aria-labelledby="sharing">
+    <h2 id="sharing">Sharing and privacy choices</h2>
+    <p>
+      Cloudflare processes information needed for hosting and security. Your
+      browser sends information directly to external providers when you load
+      media or open their links. Those providers may process information in
+      other countries under their own policies. The application includes no
+      third-party analytics or advertising integrations.
+    </p>
+    <p>
+      If you email the operator, your address, message and attachments are
+      processed to review and respond to the request, using the operator's email
+      provider. Access and retention of complaint records must be reviewed
+      before launch; no fixed retention period has been supplied.
+    </p>
+  </section>
+  <section aria-labelledby="privacy-rights">
+    <h2 id="privacy-rights">Your rights and questions</h2>
+    <p>
+      Depending on applicable law, you may have rights to request access,
+      correction, deletion or restriction of personal information, object to
+      processing, or complain to an appropriate data protection authority.
+      Contact the operator about information they handle; requests about an
+      external provider's independent processing should also be directed to that
+      provider. The available rights depend on your circumstances and the
+      applicable law.
+    </p>
+    <OperatorContact />
+    <p>
+      For content concerns, see <a href="/legal#removal">content removal</a>.
+    </p>
+  </section>
+</Information>

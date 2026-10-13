@@ -1,75 +1,102 @@
-# Architecture
+# Integrated MVP architecture
 
-## Components
+One repository and one Cloudflare project retain the approved stack:
 
-- **Astro frontend:** static HTML/CSS from `src/` and `public/`, emitted to `dist/`.
-  No framework adapter, SSR, or client JavaScript is needed for the current scaffold.
-- **Worker:** `worker/index.ts` owns `/api` and `/api/*`. It reserves documented
-  routes and responds with JSON `501` for unfinished handlers. It uses no D1 queries yet.
-- **D1:** the future persistence layer, accessed only through the Worker's `DB` binding.
-  A local sentinel binding is prepared; no database schema or production database exists.
-- **Shared contracts:** `shared/contracts.ts` defines JSON shapes, discriminated post
-  kinds, input validation, pagination fields, and error codes without database dependencies.
-- **OpenClaw:** existing local agent on the owner's MacBook. Future automation code
-  lives under `automation/` and talks exclusively to the documented HTTP API.
-
-## Data flow
+- **Astro static frontend:** HTML/CSS plus one small browser module. Same-origin public
+  feed reads use the shared validator, opaque cursor pagination and safe DOM text.
+  `/?post=<id>` resolves through `GET /api/posts/:id` inside the existing feed.
+- **Worker:** four publication operations under `/api/posts`, bounded JSON validation,
+  fail-closed bearer writes/deletes, canonicalization and sanitized JSON errors.
+- **D1:** only the Worker accesses storage. Strict schema, immutable identity/time,
+  indexed tuple ordering, atomic uniqueness and permanent soft-deletion tombstones.
+- **Automation:** Node 24 HTTP-only clients and private local retry state. No frontend
+  credentials, database access, CMS, extra server or paid AI service.
+- **OpenClaw templates:** a plugin supervises the deterministic dedicated-bot poller;
+  native command schedules invoke discovery/monthly CLI jobs using a dedicated agent
+  on the owner's existing subscription. The site does not depend on that process.
 
 ```text
-Reader -> one Cloudflare Worker project
-           |-- static route -> Static Assets (Astro dist/)
-           |-- /api/* -> Worker -> D1 (future backend implementation)
+Reader -> Cloudflare Worker project
+          |-- static assets -> Astro dist/
+          |-- /api/* -> Worker -> D1
 
-Public sources -> local OpenClaw daily selection -> authenticated POST /api/posts
-Manual URLs -> separate Telegram bot -> already approved -> same POST API
-Monthly schedule -> local Humanity Changelog -> same POST API with body/references
+Public source feeds -> local collection -> existing OpenClaw selection -> POST API
+Dedicated Telegram bot -> allowlisted human URL -> optional safe metadata -> POST API
+Monthly schedule -> all visible month publications -> existing agent -> POST API
 ```
 
-Discovery should aggregate existing source material, preserve original links and
-provenance, and avoid generating ordinary articles. Telegram submissions skip
-editorial selection because the human has already approved them. The monthly
-changelog has its own body and may have no external URL.
+Worker-first routing applies to `/api`, `/api/*` and the exact `/embed/reddit` adapter; other matching assets can
+be served directly. Static 404 handling remains enabled. Automation writes do not
+trigger builds. Reads remain public; browser code never receives a write token.
 
-## One Cloudflare project
+## Integration behavior
 
-`wrangler.jsonc` combines `main: worker/index.ts` and `assets.directory: ./dist`.
-API patterns run the Worker first. Other matching assets are served directly, avoiding
-unnecessary Worker execution. Non-API fallback requests use `env.ASSETS.fetch` and
-Astro's static `404.html`; the site is not configured as an SPA.
+Both Worker and automation use `normalizePublicationUrl` from shared contracts for
+identity. Known trackers disappear from canonical URLs; content parameters, their
+encoding/order, paths and original submitted URLs are preserved. Fetching uses the
+original URL independently of duplicate identity, checks every DNS address and
+redirect, and pins a checked public address. Metadata HTML is parsed as data only.
+Unsafe targets and confirmed original HTTP 404/410 fail; uncertain metadata failures produce a neutral hostname title
+and keep the original source link. Manual submissions call no editorial model.
 
-The static frontend can later use a small same-origin API client for fresh feed data
-without rebuilding the site after every publication. No client or feed is implemented
-in this phase. Automation writes do not trigger builds or call Astro internals.
+Monthly membership uses the configured IANA timezone and immutable UTC insertion
+timestamps. Public feed pagination includes every eligible publication and excludes
+deletions/changelogs. The digest cites at most 100 selected source references without
+limiting its input to 100. References use readable site permalinks. No searches run.
+Stable monthly source identity and saved drafts protect retries and reruns.
 
-Future D1 access should use parameterized SQL, database uniqueness constraints, and
-an indexed feed query. `published_at` is the API insertion time, not the external
-source date. The UUID tie-breaker makes equal-timestamp ordering deterministic.
-Soft-deleted content stays in storage and uniqueness indexes but disappears from reads.
+Embeds use allowlisted constructed HTTPS players with sandbox/permissions controls,
+load only after a click, and retain original links if unavailable. Changelog HTML and
+Markdown remain inert text with a small readable block subset.
 
-## Integration boundaries
+FIX-001 preserves the verified final URL inside the local HTTP boundary for provider
+recognition, without changing post URL/canonical identity or the wire schema. DNS,
+redirects and sockets share a per-request deadline; all answers remain checked and
+one public address pinned. State operations require owned 0700 directories and owned
+0600 regular files, rejecting user-created symlinks. Gateway failures retain retry
+metadata and payloads. Static assets use `_headers`; Worker responses explicitly
+attach the same policy. See [deployment](deployment.md) for CSP and remaining limits.
 
-- Frontend consumes shared types and public JSON reads; it never receives write secrets.
-- Worker validates unknown input, authenticates writes, canonicalizes URLs, detects
-  duplicates, and stores content only when a later backend phase is authorized.
-- Automation authenticates with a secret stored locally, treats duplicates as successful
-  processing, and does not import backend internals or connect to D1.
-- No OpenClaw configuration, bot registration, AI subscription change, cron trigger,
-  external-content fetch, or production resource is part of this foundation.
+## Operational boundary
 
-## Free-tier posture
+The local configuration retains a sentinel DB with `remote: false`. No production
+resources, deployment, bot registration, live OpenClaw agent changes or schedules
+were performed. OpenClaw is absent on the integration Mac per owner clarification;
+SDK/CLI compatibility is documented and mocked, not claimed as live verification.
+The plugin avoids an additional service manager; the standalone Telegram CLI is a
+manual diagnostic option and must not compete with the plugin's poller.
 
-Use direct static asset serving, small bounded paginated JSON responses, and indexed
-D1 access. No paid bindings, queues, Workers AI, or server-side model calls are added.
-The existing local agent and subscription handle future AI work. Usage and provider
-limits must be reviewed before production; Free compatibility is not a capacity guarantee.
+See [local setup](../README.md), [API](api.md), [deployment](deployment.md), and
+[manual OpenClaw checks](../automation/openclaw/INSTALL.md).
 
-## Official references
+## FIX-002 media boundaries
 
-Reviewed 2026-10-12:
+TikTok identity preparation uses the checked resolved video URL and preserves the
+original submission. Backend ingestion validates provider/URL/ID agreement and
+normalizes the stable namespace. D1 retains its existing constraints and immutable
+identity trigger. A conditional insert and duplicate lookup in one batch transaction
+protect old inconsistent namespaces and tombstones; ambiguous historical records
+require review rather than automatic merging. The legacy guard scans old claims,
+so production data volume should be assessed during deployment preparation.
 
-- [Astro manual setup and runtime requirements](https://docs.astro.build/en/install-and-setup/)
-- [Worker + Static Assets routing](https://developers.cloudflare.com/workers/static-assets/routing/worker-script/)
-- [Static Assets bindings](https://developers.cloudflare.com/workers/static-assets/binding/)
-- [Local Workers development](https://developers.cloudflare.com/workers/local-development/)
-- [Local D1 development](https://developers.cloudflare.com/d1/best-practices/local-development/)
-- [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/)
+The Reddit adapter is one small Worker-generated document, not a new service or
+stored HTML model. The host only constructs its same-origin URL after a click.
+Both its iframe and response CSP sandbox omit `allow-same-origin`; external script
+execution cannot reach the parent DOM. The main CSP adds only same-origin frames;
+Reddit scripts remain forbidden in the main document. Only the adapter permits the
+fixed official widget script and embed.reddit.com child frames, with inline styles
+for official widget sizing. No parent messaging or automatic resize protocol exists:
+a 620px scrollable media area preserves the complete official widget and source links.
+No provider controls/branding are hidden or rewritten. Ordinary assets/API responses
+retain the existing headers. See the FIX-002 handoff for live verification limits.
+
+## LEGAL-001 frontend privacy boundary
+
+Static `/legal` and `/privacy` pages and shared footer/contact components accompany
+the persistent homepage disclaimer. Public operator/contact information is configured
+at build time in `src/lib/legal.ts`; no Worker binding or API changes. External
+previews require a per-item action before image creation. Same-origin assets may
+load normally. Player notices name validated providers; embed cards request no
+separate preview. Consent is not stored. Existing sandbox/CSP/source URL policies
+remain. See [LEGAL-001 handoff](legal-001-handoff.md) for launch blockers and the
+remaining post-consent browser DNS/redirect limitation.

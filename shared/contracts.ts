@@ -1,4 +1,8 @@
-/** Public boundary shared by frontend, Worker, and HTTP-only automation clients. */
+/** Public boundary shared by frontend, Worker, and HTTP-only automation clients.
+ * FIX-002: verified TikTok publications persist source="TikTok" and the URL's
+ * numeric video ID as source_item_id; Worker ingestion enforces agreement.
+ * Stored legacy content retains its original fields and is checked at render time.
+ */
 export const CONTRACT_VERSION = 1 as const;
 export const POST_TYPES = ['news', 'video', 'meme', 'changelog'] as const;
 export const POST_ORIGINS = ['auto', 'telegram'] as const;
@@ -133,6 +137,29 @@ export function isHttpUrl(value: unknown): value is string {
   } catch {
     return false;
   }
+}
+/** Duplicate identity only: retain content parameters and their original encoding/order. */
+export function normalizePublicationUrl(value: string): string {
+  if (!isHttpUrl(value)) throw new Error('Invalid HTTP(S) URL.');
+  const url = new URL(value);
+  url.hash = '';
+  const tracking = new Set([
+    'fbclid',
+    'gclid',
+    'dclid',
+    'msclkid',
+    'mc_cid',
+    'mc_eid',
+  ]);
+  const query = url.search
+    .slice(1)
+    .split('&')
+    .filter((part) => {
+      const key = [...new URLSearchParams(part).keys()][0]?.toLowerCase() ?? '';
+      return !key.startsWith('utm_') && !tracking.has(key);
+    });
+  url.search = query.join('&');
+  return url.toString();
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

@@ -1,0 +1,82 @@
+---
+import Information from '../layouts/Information.astro';
+import OperatorContact from '../components/OperatorContact.astro';
+import { DISCLAIMER_HEADING, DISCLAIMER_TEXT } from '../lib/legal';
+---
+
+<Information
+  title="Legal disclaimer"
+  description="The nature of this satirical aggregator, third-party rights and content removal."
+>
+  <section class="site-disclaimer" aria-labelledby="disclaimer-heading">
+    <h2 id="disclaimer-heading">{DISCLAIMER_HEADING}</h2>
+    <p>{DISCLAIMER_TEXT}</p>
+  </section>
+  <section aria-labelledby="nature">
+    <h2 id="nature">1. Nature of the Website</h2>
+    <p>
+      We Are All Gonna Die aggregates third-party material, memes and commentary
+      for satire and entertainment. It is not a news organization or an
+      authoritative source of factual information.
+    </p>
+  </section>
+  <section aria-labelledby="accuracy">
+    <h2 id="accuracy">2. Satire and Accuracy</h2>
+    <p>
+      The Doom Monitor's status messages and commentary are satirical. Linked
+      publications may describe real events; their presence here does not verify
+      their accuracy. Follow source links and consult reliable original sources
+      to distinguish reported events from our satirical presentation.
+    </p>
+  </section>
+  <section aria-labelledby="third-party">
+    <h2 id="third-party">3. Third-Party Content</h2>
+    <p>
+      External publishers remain responsible for their own statements. Their
+      websites and embedded content are subject to their own terms and privacy
+      practices. Inclusion does not imply affiliation with or endorsement by a
+      source. The operator reviews concerns about material presented here and
+      may remove it when appropriate.
+    </p>
+  </section>
+  <section aria-labelledby="rights">
+    <h2 id="rights">4. Intellectual Property</h2>
+    <p>
+      Third-party rights remain with their owners. Attribution, source links and
+      embeds do not grant unrestricted reuse rights. Any reuse requires its own
+      rights assessment. Copyright concerns can be submitted through the contact
+      below.
+    </p>
+  </section>
+  <section aria-labelledby="independence">
+    <h2 id="independence">5. Editorial Independence</h2>
+    <p>
+      Selection and satirical commentary reflect this website's editorial
+      choices. Sources do not control those choices merely because their content
+      appears here. Original reporting and this site's commentary should be read
+      separately.
+    </p>
+  </section>
+  <section aria-labelledby="removal">
+    <h2 id="removal">6. Content Removal</h2>
+    <p>
+      Email the contact below with the affected publication link (or its title
+      and original source URL), your concern, supporting information and a reply
+      address. For copyright complaints, identify the work and explain your
+      ownership or authority to act.
+    </p>
+    <p>
+      The operator will review requests and may hide a publication when
+      appropriate. A private record of the complaint and action may be retained
+      to manage the request. No guaranteed response deadline is promised.
+    </p>
+  </section>
+  <section aria-labelledby="contact">
+    <h2 id="contact">7. Contact</h2>
+    <OperatorContact />
+    <p>
+      See the <a href="/privacy">privacy information</a> for details about media
+      requests and privacy questions.
+    </p>
+  </section>
+</Information>

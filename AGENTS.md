@@ -54,8 +54,8 @@ consumers together after approval. Do not create private alternative contracts.
 Follow `docs/api.md`: cursor pagination, `(published_at DESC, id DESC)`, public reads,
 authenticated writes/deletes, JSON envelopes, atomic duplicate detection, and soft
 deletion. A duplicate is a successful `200` result, not a failed submission. Never
-claim an operation succeeded if it is unimplemented. Current recognized routes must
-remain explicit `501` scaffolds until backend implementation is requested.
+claim an operation succeeded if it is unimplemented. INT-001 implements all recognized routes; do not replace working handlers with
+Foundation scaffolds.
 
 Manually submitted Telegram URLs are already editorially approved. Preserve
 `origin: "telegram"`; do not add another editorial gate. Origin is provenance,
@@ -87,9 +87,8 @@ Update architecture/decisions/deployment docs whenever those boundaries change.
 
 ## Current scope restrictions
 
-This phase is initialization, shared contracts, tooling and documentation only. Do
-not implement final UI, complete post cards, infinite scroll, production endpoint
-logic, discovery, Telegram/OpenClaw configuration, monthly generation, deployment,
-visitor authentication, comments, reactions, categories, or social sharing.
-Do not introduce microservices, queues, Docker, Kubernetes, or a CMS. Leave reserved
-directories empty until the project owner requests the corresponding phase.
+INT-001 integrates the authorized backend, frontend and automation MVP. Preserve its
+working functionality and follow the integration handoff for local QA. Production
+deployment, DNS changes, real bot registration, live OpenClaw modifications and merging
+into main require a separate user request. Do not introduce microservices, queues,
+Docker, Kubernetes, CMS, categories, accounts, reactions or unrelated product features.

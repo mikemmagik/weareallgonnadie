@@ -16,3 +16,6 @@ coverage/
 !.dev.vars.example
 *.pem
 *.key
+
+output/
+.playwright-cli/

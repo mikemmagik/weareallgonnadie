@@ -1,11 +1,11 @@
 # API contract — version 1
 
-`shared/contracts.ts` is the source of truth for wire types. This document defines
-endpoint semantics for later backend implementation. **Current scaffold:** recognized
-methods on the four reserved routes return `501 NOT_IMPLEMENTED`; unknown API paths
-return JSON `404`, and unsupported methods return JSON `405` with `Allow`. No production
-endpoint, database access, authentication, canonicalization, or cursor logic is implemented.
-The runtime input validator is available separately and is not yet wired into handlers.
+`shared/contracts.ts` is the source of truth for wire types and duplicate URL
+normalization. INT-001 integrates the implemented Worker, static frontend and HTTP
+automation clients. All four documented operations work locally with migrated D1;
+unknown API paths return JSON 404 and unsupported methods return 405 with Allow.
+The wire schema, cursor version, reference limit, authentication and tombstone
+semantics retain version 1. The coordinated tracking normalization change is below.
 
 ## JSON conventions
 
@@ -97,22 +97,22 @@ Unknown providers must use a fallback link, not arbitrary provider metadata:
 `label` may be null. `embed: null` means no requested embed; the original post URL is
 still available as the fallback. Blocked, removed, unsupported, or unavailable embeds
 must display a safe source link instead. Render link text escaped and use
-`rel="noopener noreferrer"` on new-tab external links. Future renderer sandbox/CSP
-rules must be reviewed with the frontend implementation; no embed renderer exists yet.
+`rel="noopener noreferrer"` on new-tab external links. The frontend constructs allowlisted HTTPS players, loads them only on click,
+and uses iframe sandbox and autoplay-denying permissions. Deployment CSP must permit
+only the documented player origins; see the frontend guide.
 
 ## Authentication
 
 Reads are public. POST and DELETE require `Authorization: Bearer <API_WRITE_TOKEN>`
 over HTTPS in production. Local loopback HTTP is allowed for development only.
-The future backend must authenticate before parsing submission content or accessing
-D1, use a timing-safe credential check, and fail closed when the secret is missing
+The backend authenticates before parsing submission content or accessing
+D1, uses a timing-safe credential check, and fails closed when the secret is missing
 (`503 SERVICE_UNAVAILABLE`). Missing or invalid credentials return `401 UNAUTHORIZED`
 with `WWW-Authenticate: Bearer`. Keep tokens out of URLs, logs, Git and frontend
 bundles. No visitor accounts or cookies are required. Same-origin browser reads need
 no permissive CORS; external automation is a server-to-server HTTP client.
 
-The current 501 scaffold rejects all recognized operations, including write attempts
-with or without a token. It is not an authentication implementation.
+The integrated backend implements authentication. No recognized endpoint remains a 501 scaffold.
 
 ## GET /api/posts
 
@@ -147,7 +147,7 @@ curl 'http://127.0.0.1:8787/api/posts?limit=20'
 curl 'http://127.0.0.1:8787/api/posts?limit=20&cursor=RETURNED_CURSOR'
 ```
 
-Example planned `200` response for an empty feed:
+Example `200` response for an empty feed:
 
 ```json
 { "ok": true, "data": { "posts": [], "next_cursor": null } }
@@ -161,6 +161,9 @@ the response below. `next_cursor` is null or the versioned cursor string.
 Returns `200 {ok:true,data:Post}` for a visible post. Malformed UUIDs return
 `400 VALIDATION_ERROR`. Missing or soft-deleted posts return `404 NOT_FOUND`; do not
 expose a tombstone through public reads. Public reads do not require a token.
+The same homepage uses this endpoint for `/?post=<id>` publication permalinks,
+including posts outside its first feed page. Telegram and monthly references link to
+that readable URL rather than to the JSON endpoint.
 
 ```sh
 curl http://127.0.0.1:8787/api/posts/5bdac05a-6f04-4bb9-a7d7-c08530c4fb12
@@ -182,7 +185,7 @@ curl -X POST http://127.0.0.1:8787/api/posts \
 `$API_WRITE_TOKEN` is a local environment value, not a real committed token. Telegram
 origin records the already approved manual submission; no second editorial gate.
 
-Example planned **201 Created** response:
+Example **201 Created** response:
 
 ```json
 {
@@ -237,9 +240,14 @@ Example URL-less changelog input:
 ### Duplicate detection is a successful submission
 
 Normalize `canonical_url ?? url` with the standard URL parser, lowercase host/scheme,
-remove fragments and default ports, and serialize with `URL.toString()`. Preserve
-path case, trailing-slash semantics, query parameters and their order. Do not follow
-redirects or infer provider-specific equivalence in this phase. If no URL exists,
+remove fragments and default ports, and serialize with `URL.toString()`. Remove case-insensitive `utm_*` parameters and exactly `fbclid`, `gclid`, `dclid`,
+`msclkid`, `mc_cid`, `mc_eid`. Decode parameter names for recognition; preserve all
+other query components, original encoding and ordering. Keep `v`, `list`, `id`, `ref`,
+signature/access parameters and unknown keys. Preserve path case and trailing-slash
+semantics. For example, `?v=abc&utm_source=telegram` and `?v=abc&fbclid=123` share
+identity, while `?v=def` remains distinct. This INT-001 semantic refinement is
+implemented once in `normalizePublicationUrl` and used by backend and automation. Ordinary URL normalization does not follow redirects. FIX-002 adds the explicitly
+approved TikTok provider identity rule below. If no URL exists,
 canonical_url remains null. The regular response stores the normalized canonical URL
 while preserving the original `url` field.
 
@@ -291,10 +299,18 @@ them as failures. URL-less changelogs should use a stable monthly source_item_id
 without either duplicate key repeated submissions cannot be recognized as duplicates.
 
 A failed submission has `ok: false` and an appropriate 4xx/5xx error. No successful
-publication is implied. Retry transport failures, `429`, `500` and `503` with bounded
+publication is implied. Automation retries transport failures and `408`, `429`,
+`500`, `502`, `503`, `504` with bounded
 backoff and jitter, respecting Retry-After when present; the same keys protect against
 an uncertain previously committed write. Do not automatically retry validation/auth
 errors or `501`; fix the input/configuration or wait for implementation.
+
+FIX-001 does not change contract v1 URL acceptance or provider metadata shapes.
+Automation uses a checked resolved URL for TikTok embed metadata while preserving
+original `url` and canonical identity. Ingestion/rendering suppress previews that
+fail the public HTTPS preview policy; API URL validation alone does not authorize
+fetching or rendering a private image target. Confirmed original 404/410 stops manual
+preparation before POST; uncertainty/optional metadata failure retains human approval.
 
 ## DELETE /api/posts/:id
 
@@ -309,7 +325,7 @@ curl -X DELETE \
   http://127.0.0.1:8787/api/posts/5bdac05a-6f04-4bb9-a7d7-c08530c4fb12
 ```
 
-Planned `200` response:
+`200` response:
 
 ```json
 {
@@ -336,9 +352,9 @@ Planned `200` response:
 | 429  | RATE_LIMITED           | Temporary throttling; include Retry-After when known                         |
 | 500  | INTERNAL_ERROR         | Unexpected backend failure; no internal detail                               |
 | 503  | SERVICE_UNAVAILABLE    | Backend dependency unavailable or write secret unconfigured                  |
-| 501  | NOT_IMPLEMENTED        | Current reserved endpoint scaffold                                           |
+| 501  | NOT_IMPLEMENTED        | Reserved compatibility error; no integrated route returns it                 |
 
-Validation example (future behavior):
+Validation example:
 
 ```json
 {
@@ -356,7 +372,7 @@ Validation example (future behavior):
 }
 ```
 
-Current scaffold example:
+Historical scaffold example (not returned by the integrated routes):
 
 ```json
 {
@@ -372,3 +388,45 @@ Authentication failures precede content validation for recognized write routes.
 Unknown API routes always stay JSON and must not fall through to HTML assets.
 Platform-generated limits/errors outside the Worker are not guaranteed to use this
 application envelope; clients must handle non-JSON transport responses safely.
+
+## FIX-002 approved media policy
+
+The owner approved TikTok cross-URL identity and required Reddit inline rendering.
+Wire fields, envelopes, cursor version and D1 schema remain v1. Ingestion validation
+and duplicate semantics are refined for recognized TikTok videos only:
+
+- Persist `source: "TikTok"` and `source_item_id` equal to the verified numeric video
+  ID (15–25 decimal digits, nonzero leading digit). Preserve `url` exactly as submitted
+  and the existing tracking-normalized `canonical_url`.
+- Automation obtains short-link identity from the safely resolved canonical video URL.
+  Backend ingestion derives identity from a supported canonical original URL or
+  matching structured TikTok embed URL. Authenticated writers supply resolved metadata;
+  the Worker validates its structure/consistency, without fetching arbitrary URLs or
+  claiming independent verification that a short link redirects to the supplied ID.
+- A supplied non-null source ID must agree. TikTok provider ID, embed URL, supported
+  TikTok original and any recognized canonical hint must agree. Missing source IDs are
+  filled; alternate source labels normalize to `TikTok`. Arbitrary IDs and unresolved
+  short links cannot claim a TikTok identity. Unresolved links remain safe fallbacks.
+- Unique `(source, source_item_id)` remains atomic. An insertion-transaction guard also
+  detects old immutable rows claiming that TikTok ID or containing its canonical
+  original URL. One structurally verified legacy row returns duplicate without changing
+  its content/identity; contradictory or multiple records return 400 for data review.
+  Deleted rows participate in both paths. No implicit merge, backfill or resurrection.
+  Other provider namespaces retain exact case-sensitive behavior.
+
+Reddit supports post paths `/r/<subreddit>/comments/<base36-id>/[slug]` on reddit.com,
+www.reddit.com and old.reddit.com, plus redd.it short links. IDs are lowercase base36,
+3–10 characters. Provider metadata must agree with the post URL before rendering.
+Comments, user pages, communities, invalid IDs and arbitrary HTML use original links.
+News and meme cards are equally eligible; recognized originals without provider
+metadata can also offer the widget.
+
+After an explicit click, the frontend opens `/embed/reddit?url=<validated-post-url>`.
+This **GET-only HTML adapter** is not a publication API and needs no write token.
+It constructs the official blockquote plus `https://embed.reddit.com/widgets.js` inside
+an opaque sandbox. No arbitrary oEmbed HTML enters either document. For redd.it only,
+it requests the fixed official HTTPS `/oembed` endpoint with redirects disabled, a
+five-second deadline and a 64 KiB response limit, extracting only a validated canonical
+post URL with the same ID. Unavailable/restricted responses retain an explicit fallback.
+The provider controls content eligibility. Source attribution and original links remain
+visible outside the sandbox before/after loading; autoplay permissions remain denied.

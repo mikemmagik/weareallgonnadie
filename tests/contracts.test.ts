@@ -158,3 +158,24 @@ test('preview and reference metadata accept explicit nulls and valid URLs', () =
     true,
   );
 });
+
+test('duplicate identity strips known trackers while preserving content keys and encoding', async () => {
+  const { normalizePublicationUrl: normalize } =
+    await import('../shared/contracts.ts');
+  assert.equal(
+    normalize(
+      'HTTPS://Example.COM:443/Case/?v=one%20two&utm_source=a&%55TM_campaign=b&fbclid=x&list=L&ref=keep#fragment',
+    ),
+    'https://example.com/Case/?v=one%20two&list=L&ref=keep',
+  );
+  assert.equal(normalize('https://x.test/a?utm_medium=x'), 'https://x.test/a');
+  for (const [a, b] of [
+    ['?v=1', '?v=2'],
+    ['?a=1&b=2', '?b=2&a=1'],
+    ['?ref=a', '?ref=b'],
+  ])
+    assert.notEqual(
+      normalize(`https://x.test/${a}`),
+      normalize(`https://x.test/${b}`),
+    );
+});
