@@ -89,3 +89,14 @@ for official widget sizing. No parent messaging or automatic resize protocol exi
 a 620px scrollable media area preserves the complete official widget and source links.
 No provider controls/branding are hidden or rewritten. Ordinary assets/API responses
 retain the existing headers. See the FIX-002 handoff for live verification limits.
+
+## LEGAL-001 frontend privacy boundary
+
+Static `/legal` and `/privacy` pages and shared footer/contact components accompany
+the persistent homepage disclaimer. Public operator/contact information is configured
+at build time in `src/lib/legal.ts`; no Worker binding or API changes. External
+previews require a per-item action before image creation. Same-origin assets may
+load normally. Player notices name validated providers; embed cards request no
+separate preview. Consent is not stored. Existing sandbox/CSP/source URL policies
+remain. See [LEGAL-001 handoff](legal-001-handoff.md) for launch blockers and the
+remaining post-consent browser DNS/redirect limitation.

@@ -184,6 +184,14 @@ export async function verifyMonitor(page, base = 'http://127.0.0.1:4321') {
     'External links are safe',
   );
   check(
+    (await page.locator('.meme-media img').count()) === 0,
+    'External meme image waits for interaction',
+  );
+  await page
+    .getByRole('button', { name: /Load external image: Transmission 3/ })
+    .click();
+  await page.locator('.meme-media img').waitFor();
+  check(
     (await page
       .locator('.meme-media img')
       .evaluate((image) => getComputedStyle(image).objectFit)) === 'contain',
@@ -224,6 +232,9 @@ export async function verifyMonitor(page, base = 'http://127.0.0.1:4321') {
     (await page.locator('.fallback-player').count()) === 1,
     'Unavailable embed has clickable fallback',
   );
+  await page
+    .getByRole('button', { name: /Load external image: Transmission 7/ })
+    .click();
   await page.locator('.image-unavailable').waitFor();
   check(
     await page.locator('.image-unavailable .image-fallback').isVisible(),
@@ -314,6 +325,6 @@ if (import.meta.main) {
     { encoding: 'utf8', maxBuffer: 2_000_000 },
   );
   assert.doesNotMatch(output, /### Error/);
-  assert.match(output, /"passed":34/);
+  assert.match(output, /"passed":35/);
   console.log(output.slice(0, output.indexOf('### Ran Playwright code')));
 }

@@ -99,3 +99,12 @@ validated post URLs, bounded official oEmbed resolution for short links and alwa
 visible original links. Fixed scrollable height avoids trusting parent resize messages
 or suppressing provider elements. Real provider eligibility/playback is recorded
 separately from deterministic regression; no mock is counted as production proof.
+
+## LEGAL-001 privacy decisions
+
+The owner-requested persistent disclaimer and static legal/privacy pages accompany
+per-item click-to-load external images/players. Same-origin assets remain automatic.
+The extra click avoids unsolicited provider requests. No consent persistence, proxy,
+new service/dependency or API change is introduced. Contact remains visibly
+unavailable until the real mailbox is configured and verified. See the
+[LEGAL-001 handoff](legal-001-handoff.md).
