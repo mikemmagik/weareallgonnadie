@@ -1,4 +1,5 @@
 ---
+import ExternalContent from './ExternalContent.astro';
 import { operator, contactHref } from '../lib/legal';
 const contact = contactHref(operator);
 ---
@@ -8,3 +9,5 @@ const contact = contactHref(operator);
   <a href="/privacy">PRIVACY</a>
   <a href={contact ?? '/legal#contact'}>CONTACT</a>
 </nav>
+
+<ExternalContent />

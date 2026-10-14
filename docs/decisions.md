@@ -108,3 +108,29 @@ The extra click avoids unsolicited provider requests. No consent persistence, pr
 new service/dependency or API change is introduced. Contact remains visibly
 unavailable until the real mailbox is configured and verified. See the
 [LEGAL-001 handoff](legal-001-handoff.md).
+
+## MEDIA-UX-001 approved product decisions
+
+The owner's request replaces per-item loading permission with one session-wide
+external-media preference in sessionStorage. No localStorage, persistent consent
+cookie or SDK is introduced. Unknown/unavailable storage asks again; explicit
+in-memory permission applies only to the current document. Escape means decline.
+Settings can replace either choice; declining unloads external media. The permanent
+homepage disclaimer and operator configuration are unchanged.
+
+Real WebKit evidence requires replacing nested opaque Reddit widgets with a direct
+official widget-generated iframe at the validated Reddit origin. Scripts and
+same-origin are safe together **only on this remote provider frame**; the host and
+legacy adapter never gain that combination. SOP plus the restricted sandbox denies
+host DOM access, top navigation and popup escape. No separate hosting origin,
+script proxy, scraping or infrastructure change is needed. The main CSP adds only
+https://embed.reddit.com to frames; every other restriction is retained. The legacy
+opaque adapter and its security assertions remain. Its resolve=1 JSON mode is needed
+only to resolve short links without putting provider markup/scripts in the host.
+
+Provider access restrictions remain provider outcomes. A visible original link and
+explanation are always present. No iframe load/error heuristic claims live success.
+TikTok uses official player defaults for visible controls and autoplay=0; Instagram
+retains its provider iframe, with separate Reel/post dimensions and no undocumented
+height messages. Long captions may need provider scrolling. Live media acceptance
+is reported separately from fixture coverage.

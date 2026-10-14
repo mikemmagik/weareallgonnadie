@@ -1,4 +1,5 @@
 import type { Post } from '../../shared/contracts.ts';
+import { queueExternalMedia } from './external-content.ts';
 import { redditPost } from '../../shared/media.ts';
 import {
   changelogBlocks,
@@ -29,31 +30,13 @@ function externalLink(
   link.rel = 'noopener noreferrer';
   return link;
 }
-/** Neutral notice built with text nodes; provider labels never become markup. */
-function mediaConsent(
-  provider: string,
-  original: string | null,
-  label: string,
-  load: () => void,
-): HTMLElement {
-  const notice = element('div', 'media-consent');
-  notice.append(
-    element('h3', 'consent-heading', 'LOAD EXTERNAL CONTENT'),
-    element(
-      'p',
-      'consent-description',
-      `This content is hosted by ${provider}. Loading it may share your IP address with the provider and allow third-party cookies.`,
-    ),
+/** A passive placeholder; the session dialog is the sole consent UI. */
+function pausedMedia(): HTMLElement {
+  return element(
+    'p',
+    'media-placeholder',
+    'External content is paused. Use External content settings to change your choice.',
   );
-  const actions = element('div', 'consent-actions');
-  const button = element('button', 'load-player', 'LOAD CONTENT');
-  button.type = 'button';
-  button.setAttribute('aria-label', label);
-  button.addEventListener('click', load, { once: true });
-  actions.append(button);
-  if (original) actions.append(externalLink(original, 'OPEN ORIGINAL'));
-  notice.append(actions);
-  return notice;
 }
 
 function mediaFor(post: Post): HTMLElement | null {
@@ -72,49 +55,89 @@ function mediaFor(post: Post): HTMLElement | null {
       : null);
   if (player && (post.type !== 'news' || player.provider === 'Reddit')) {
     const media = element('div', `media embed-media ${player.shape}`);
-    media.append(
-      mediaConsent(
-        player.provider,
-        original,
-        `Load ${player.provider} embed: ${post.title}`,
-        () => {
-          const frame = element('iframe', 'player-frame');
-          frame.title = `${player.provider}: ${post.title}`;
-          frame.src = player.src;
-          frame.loading = 'lazy';
-          frame.referrerPolicy = 'no-referrer';
-          frame.setAttribute(
-            'sandbox',
-            player.provider === 'Reddit'
-              ? 'allow-scripts allow-popups'
-              : 'allow-scripts allow-same-origin allow-presentation allow-popups',
-          );
-          frame.allow =
-            player.provider === 'Reddit'
-              ? "autoplay 'none'; camera 'none'; microphone 'none'; fullscreen 'none'; clipboard-read 'none'; clipboard-write 'none'"
-              : "autoplay 'none'; fullscreen; picture-in-picture";
-          media.replaceChildren(frame);
-          const hint = element(
-            'p',
-            'embed-hint',
-            'Player blocked or unavailable? ',
-          );
-          if (original) hint.append(externalLink(original, 'Open original ↗'));
-          media.after(hint);
-          frame.addEventListener(
-            'error',
-            () =>
+    media.dataset.provider = player.provider;
+    let generation = 0;
+    const pause = () => {
+      generation++;
+      media.replaceChildren(pausedMedia());
+    };
+    pause();
+    queueExternalMedia(
+      media,
+      async () => {
+        const current = generation;
+        let src = player.src;
+        if (player.provider === 'Reddit' && src.startsWith('/embed/reddit?')) {
+          try {
+            const response = await fetch(src, {
+              cache: 'no-store',
+              headers: { Accept: 'application/json' },
+            });
+            const data: unknown = await response.json();
+            const resolved =
+              data && typeof data === 'object' && 'url' in data
+                ? redditPost(data.url)
+                : null;
+            const expected = redditPost(
+              post.embed?.kind === 'provider' ? post.embed.url : post.url,
+            );
+            const direct =
+              resolved && !resolved.short && resolved.id === expected?.id
+                ? playerFor({
+                    kind: 'provider',
+                    provider: 'reddit',
+                    id: resolved.id,
+                    url: resolved.url,
+                  })
+                : null;
+            if (!response.ok || !direct) throw new Error('Reddit unavailable');
+            src = direct.src;
+          } catch {
+            if (current === generation)
               media.replaceChildren(
                 element(
                   'p',
                   'media-fallback',
-                  'Player unavailable. Open the original below.',
+                  'Reddit embed unavailable. Open the original below.',
                 ),
+              );
+            return;
+          }
+        }
+        // A settings change during short-link resolution must not create a frame.
+        if (current !== generation) return;
+        const frame = element('iframe', 'player-frame');
+        frame.title = `${player.provider}: ${post.title}`;
+        frame.loading = 'lazy';
+        frame.referrerPolicy = 'no-referrer';
+        frame.setAttribute(
+          'sandbox',
+          player.provider === 'Reddit'
+            ? src.startsWith('https://embed.reddit.com/')
+              ? 'allow-scripts allow-same-origin allow-popups'
+              : 'allow-scripts allow-popups'
+            : 'allow-scripts allow-same-origin allow-presentation allow-popups',
+        );
+        frame.allow =
+          player.provider === 'Reddit'
+            ? "autoplay 'none'; camera 'none'; microphone 'none'; fullscreen 'none'; clipboard-read 'none'; clipboard-write 'none'"
+            : "autoplay 'none'; fullscreen; picture-in-picture";
+        frame.addEventListener(
+          'error',
+          () =>
+            media.replaceChildren(
+              element(
+                'p',
+                'media-fallback',
+                'Player unavailable. Open the original below.',
               ),
-            { once: true },
-          );
-        },
-      ),
+            ),
+          { once: true },
+        );
+        frame.src = src;
+        media.replaceChildren(frame);
+      },
+      pause,
     );
     return media;
   }
@@ -142,7 +165,7 @@ function mediaFor(post: Post): HTMLElement | null {
         },
         { once: true },
       );
-      // Assign src only inside this action (or for a validated same-origin asset).
+      // External src is assigned only by the consent/viewport controller.
       image.src = preview.url;
       const destination = original
         ? externalLink(original, '', 'preview-link')
@@ -152,16 +175,14 @@ function mediaFor(post: Post): HTMLElement | null {
       destination.append(image);
       media.replaceChildren(destination, fallback);
     };
-    if (preview.external)
-      media.append(
-        mediaConsent(
-          preview.provider,
-          original,
-          `Load external image: ${post.title}`,
-          load,
-        ),
-      );
-    else load();
+    if (preview.external) {
+      const pause = () => {
+        media.classList.remove('image-unavailable');
+        media.replaceChildren(pausedMedia());
+      };
+      pause();
+      queueExternalMedia(media, load, pause);
+    } else load();
     return media;
   }
   if (post.type === 'news') return null;
@@ -264,8 +285,20 @@ export function renderPost(post: Post, index: number): HTMLElement {
   article.append(content);
   if (post.type !== 'changelog') {
     const media = mediaFor(post);
-    if (media) article.append(media);
-    else {
+    if (media) {
+      article.append(media);
+      if (media.dataset.provider) {
+        const hint = element(
+          'p',
+          'embed-hint',
+          `${media.dataset.provider} may be blocked, unavailable, deleted or restricted. `,
+        );
+        const destination = safeUrl(post.url) ?? safeUrl(post.embed?.url);
+        if (destination)
+          hint.append(externalLink(destination, 'Open original ↗'));
+        article.append(hint);
+      }
+    } else {
       article.classList.add('text-only');
       content.append(
         element(

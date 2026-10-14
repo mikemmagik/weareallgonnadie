@@ -169,3 +169,18 @@ updating the privacy notice. `/legal` and `/privacy` inherit existing static hea
 Worker/Reddit headers remain unchanged. Click-to-load reduces unsolicited requests
 but does not remove the post-consent preview DNS/redirect risk. Existing QA blockers
 remain; see [LEGAL-001 handoff](legal-001-handoff.md).
+
+## MEDIA-UX-001 local verification
+
+No deployment, staging, DNS, remote D1, secrets or automation installation changes.
+Main static and Worker CSP now also allow exactly https://embed.reddit.com frames;
+provider scripts remain disallowed in the host. Deploying this later would require
+matching assets/Worker policy. The legacy HTML adapter keeps its opaque scoped CSP;
+its optional resolve=1 JSON response uses the ordinary restrictive headers.
+
+The current consent preference is session-wide and loads media near the viewport.
+It replaces the historical per-item click behavior above. See the
+[handoff](media-ux-001-handoff.md) for local browser setup, live-provider findings and
+remaining Firefox/native Safari/device checks. Rebuild before starting local QA;
+restart a local asset server after a build, and do not rebuild while testing its
+existing asset manifest. This is a local development concern, not a staging change.

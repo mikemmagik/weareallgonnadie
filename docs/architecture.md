@@ -46,7 +46,7 @@ limiting its input to 100. References use readable site permalinks. No searches 
 Stable monthly source identity and saved drafts protect retries and reruns.
 
 Embeds use allowlisted constructed HTTPS players with sandbox/permissions controls,
-load only after a click, and retain original links if unavailable. Changelog HTML and
+load near the viewport after session consent, and retain original links if unavailable. Changelog HTML and
 Markdown remain inert text with a small readable block subset.
 
 FIX-001 preserves the verified final URL inside the local HTTP boundary for provider
@@ -100,3 +100,34 @@ load normally. Player notices name validated providers; embed cards request no
 separate preview. Consent is not stored. Existing sandbox/CSP/source URL policies
 remain. See [LEGAL-001 handoff](legal-001-handoff.md) for launch blockers and the
 remaining post-consent browser DNS/redirect limitation.
+
+## MEDIA-UX-001 current media boundary
+
+This supersedes the FIX-002/LEGAL-001 loading and Reddit rendering details above.
+One native modal dialog controls all external media in the tab session. The frontend
+stores allow/decline in sessionStorage, gates URL assignment and uses a 320px
+IntersectionObserver margin (scroll/resize fallback). No provider request is needed
+before a choice. Settings exist on feed and information pages. Revocation removes
+loaded frames/images, invalidates pending Reddit resolution and pauses future loads.
+A restored page rechecks the preference on persisted pageshow.
+
+Reddit full URLs now use the **official widget-generated embed.reddit.com iframe**
+directly, sandboxed at Reddit's own cross-origin identity. This removes the opaque
+adapter ancestor that WebKit rejects under Reddit frame-ancestors, and avoids the
+Origin null module CORS failure. The frame grants scripts/same-origin/popups only;
+same-origin here means Reddit, never the host. No provider script executes in the
+host. Main CSP adds only the fixed HTTPS Reddit frame origin, with script/style/API
+policies unchanged. All host HTML retains anti-framing headers. The legacy adapter
+still has its original opaque CSP and remains covered by isolation tests.
+
+For redd.it, consent and proximity gate a same-origin GET to the existing adapter
+route with resolve=1, returning only a validated full same-ID URL as JSON. The
+frontend revalidates it before constructing the remote frame. Official oEmbed stays
+bounded, fixed-host and redirect-free. No publication schema, database or write API
+changes. Permanent attribution/title/original links and an unavailable-content hint
+remain independently accessible; iframe load is never proof of content success.
+
+TikTok has a 9:16 player capped at 400px. Instagram distinguishes /p/ from /reel/ or
+/tv/, reserves portrait media plus provider chrome, and permits provider scrolling
+for unusually long content. Carousel identity cannot be inferred from /p/ alone.
+See [MEDIA-UX-001 handoff](media-ux-001-handoff.md) for evidence and limitations.

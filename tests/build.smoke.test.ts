@@ -59,7 +59,21 @@ test(
       assert.match(page, /working, verified contact must be/);
       assert.match(page, /href="\/legal#contact"/);
       assert.doesNotMatch(page, /mailto:/);
-      assert.doesNotMatch(page, /<script/);
+      assert.match(page, /id="external-content-dialog"/);
+      const tags = [...page.matchAll(/<script[^>]*>(.*?)<\/script>/gs)];
+      assert.equal(
+        tags.length,
+        1,
+        'Information pages load only the settings module',
+      );
+      for (const [tag, body] of tags) {
+        assert.match(tag, /type="module" src="\/_astro\/[^"]+\.js"/);
+        assert.equal(
+          body,
+          '',
+          'No inline or provider script on information pages',
+        );
+      }
     }
     for (const [href, label] of [
       ['/legal', 'LEGAL'],
@@ -70,7 +84,11 @@ test(
     assert.doesNotMatch(html, /class="post /);
     const assets = new URL('../dist/_astro/', import.meta.url);
     const scripts = readdirSync(assets).filter((name) => name.endsWith('.js'));
-    assert.equal(scripts.length, 1, 'One small native browser module');
+    assert.equal(
+      scripts.length,
+      3,
+      'Feed and settings entries share one consent module',
+    );
     assert.ok(
       readdirSync(assets).every((name) => !name.endsWith('.svg')),
       'Development illustrations are absent from production',

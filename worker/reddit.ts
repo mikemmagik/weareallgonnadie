@@ -71,12 +71,24 @@ export async function redditAdapter(request: Request): Promise<Response> {
   const params = new URL(request.url).searchParams;
   const original = params.get('url');
   const post = redditPost(original);
+  const resolve = params.get('resolve') === '1';
   const valid =
     request.method === 'GET' &&
-    params.size === 1 &&
+    params.size === (resolve ? 2 : 1) &&
+    (!resolve || params.getAll('resolve').length === 1) &&
     params.getAll('url').length === 1 &&
     post;
   const widgetUrl = valid ? await redditWidgetUrl(post.url) : null;
+  // Resolve identity only after frontend consent; no provider markup enters the host.
+  if (resolve) {
+    return Response.json(
+      { url: widgetUrl },
+      {
+        status: valid ? 200 : 400,
+        headers: { ...SECURITY_HEADERS, 'Cache-Control': 'no-store' },
+      },
+    );
+  }
   const nonce = crypto.randomUUID();
   const source = post
     ? `<a href="${escape(post.url)}" target="_blank" rel="noopener noreferrer">Open original Reddit post ↗</a>`

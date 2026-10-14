@@ -5,7 +5,7 @@ monthly Humanity Changelogs. Astro builds static assets; a Cloudflare Worker ser
 public reads and authenticated writes against D1. Local automation talks only to
 that HTTP API. The site runs independently of automation or OpenClaw.
 
-**Status:** FIX-002 on `fix/final-media`; see [remediation handoff](docs/fix-002-handoff.md).
+**Status:** MEDIA-UX-001 on `fix/media-ux-001`; see [media handoff](docs/media-ux-001-handoff.md).
 Backend, frontend and automation retain the integrated MVP.
 No production deployment, real bot or OpenClaw configuration was created.
 

@@ -19,7 +19,13 @@ test('Reddit supports only public post-shaped URLs and matching structured ident
       id: 'crpjwk',
       url,
     });
-    assert.ok(player?.src.startsWith('/embed/reddit?url='));
+    assert.ok(
+      player?.src.startsWith(
+        url.includes('redd.it')
+          ? '/embed/reddit?url='
+          : 'https://embed.reddit.com/r/aww/comments/crpjwk/',
+      ),
+    );
   }
   for (const url of [
     'https://reddit.com/r/aww/',
@@ -116,5 +122,65 @@ test('adapter constructs the official widget with opaque sandbox, scoped CSP and
     );
     assert.equal(invalid.status, 400);
     assert.doesNotMatch(await invalid.text(), /<script/);
+  }
+});
+
+test('MEDIA-UX-001 resolver returns only validated Reddit identity as inert JSON', async () => {
+  const response = await redditAdapter(
+    new Request(
+      `https://monitor.test/embed/reddit?url=${encodeURIComponent(original)}&resolve=1`,
+    ),
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    url: 'https://www.reddit.com/r/aww/comments/crpjwk/',
+  });
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.match(
+    response.headers.get('content-security-policy')!,
+    /script-src 'self'/,
+  );
+  assert.doesNotMatch(
+    response.headers.get('content-security-policy')!,
+    /nonce|unsafe-inline|widgets.js/,
+  );
+  for (const query of [
+    'url=https://evil.example/&resolve=1',
+    `url=${encodeURIComponent(original)}&resolve=1&resolve=1`,
+    `url=${encodeURIComponent(original)}&resolve=1&html=x`,
+  ]) {
+    const invalid = await redditAdapter(
+      new Request(`https://monitor.test/embed/reddit?${query}`),
+    );
+    assert.equal(invalid.status, 400);
+    assert.deepEqual(await invalid.json(), { url: null });
+  }
+});
+
+test('MEDIA-UX-001 provider layouts distinguish TikTok, Instagram Reel and post URLs', () => {
+  for (const [provider, id, url, shape] of [
+    [
+      'tiktok',
+      '6718335390845095173',
+      'https://www.tiktok.com/@scout2015/video/6718335390845095173',
+      'tiktok',
+    ],
+    [
+      'instagram',
+      'reel/Abc_def123',
+      'https://www.instagram.com/reel/Abc_def123/',
+      'instagram-reel',
+    ],
+    [
+      'instagram',
+      'p/Abc_def123',
+      'https://www.instagram.com/p/Abc_def123/',
+      'instagram-post',
+    ],
+  ] as const) {
+    assert.equal(
+      playerFor({ kind: 'provider', provider, id, url })?.shape,
+      shape,
+    );
   }
 });

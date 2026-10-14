@@ -417,9 +417,26 @@ dd {
   height: 100%;
   display: block;
 }
-.embed-media.portrait {
-  aspect-ratio: 4 / 3;
-  max-height: 440px;
+.embed-media.tiktok {
+  aspect-ratio: 9 / 16;
+  max-width: 400px;
+  justify-self: center;
+}
+/* Cross-origin Instagram embeds expose no supported height-reporting API.
+   Reserve portrait media plus header/footer space; keep provider scrolling available. */
+.embed-media.instagram-post,
+.embed-media.instagram-reel {
+  aspect-ratio: auto;
+  max-width: 540px;
+  justify-self: center;
+  height: auto;
+  container-type: inline-size;
+}
+.embed-media.instagram-post .player-frame {
+  height: max(540px, calc(125cqw + 180px));
+}
+.embed-media.instagram-reel .player-frame {
+  height: max(640px, calc(177.78cqw + 180px));
 }
 .embed-media.reddit {
   aspect-ratio: auto;
@@ -712,9 +729,6 @@ footer {
   .news-media {
     max-height: none;
   }
-  .embed-media.portrait {
-    aspect-ratio: 4 / 3;
-  }
   .post-changelog .post-content {
     padding: 20px 17px;
   }
@@ -823,46 +837,68 @@ footer {
   border-left: 2px solid #a4b2b7;
   padding-left: 12px;
 }
-.media-consent {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 16px;
-  gap: 10px;
-  color: #f0f1ed;
-  background: #171d1f;
-  font-family: Arial, sans-serif;
-}
-.consent-heading {
+.media-placeholder {
   margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
-}
-.consent-description {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.45;
+  padding: 20px;
+  color: var(--muted);
+  font:
+    14px/1.5 Arial,
+    sans-serif;
   overflow-wrap: anywhere;
 }
-.consent-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  font-size: 11px;
-}
-.consent-actions .load-player {
-  position: static;
-  display: block;
-  width: auto;
-  min-height: 36px;
-  padding: 8px 12px;
-  background: #d6dfdf;
-  color: #101616;
-}
-.consent-actions a {
+.external-settings {
+  border: 0;
+  background: none;
+  padding: 4px 0;
+  color: #c7d0cd;
+  font:
+    11px/1.5 Arial,
+    sans-serif;
   text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.external-dialog {
+  text-transform: none;
+  letter-spacing: normal;
+  width: min(520px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: clamp(16px, 4vw, 28px);
+  border: 1px solid #526064;
+  background: #171d1f;
+  color: #f0f1ed;
+  font:
+    16px/1.5 Arial,
+    sans-serif;
+}
+.external-dialog::backdrop {
+  background: #080b0bd9;
+}
+.external-dialog h2 {
+  margin: 0 0 16px;
+  font:
+    bold 16px/1.5 Arial,
+    sans-serif;
+}
+.external-dialog p {
+  margin: 0 0 16px;
+}
+.external-dialog-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: stretch;
+}
+.external-dialog-actions .terminal-button {
+  white-space: normal;
+  min-height: 44px;
+  padding: 10px 12px;
+  line-height: 1.5;
+}
+.external-dialog-actions a {
+  text-decoration: underline;
+  align-self: flex-start;
 }
 .preview-link {
   display: block;
@@ -877,9 +913,5 @@ footer {
   }
   .news-media {
     max-height: none;
-  }
-  .media-consent {
-    padding: 12px;
-    gap: 8px;
   }
 }
