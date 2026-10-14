@@ -31,7 +31,7 @@ export async function verifyReddit(page, { base, ids, live }) {
       const block = document.querySelector('.reddit-embed-bq');
       try { parent.document.body.dataset.providerEscaped = 'yes'; } catch { document.body.dataset.parentBlocked = 'yes'; }
       const frame = document.createElement('iframe');
-      frame.src = 'https://embed.reddit.com/r/test/comments/abc123/';
+      frame.src = 'https://embed.reddit.com/r/test/comments/abc123/?showmedia=' + block.getAttribute('data-embed-showmedia');
       frame.style.width = '100%'; frame.style.height = '450px';
       block.replaceWith(frame);
     `,
@@ -41,7 +41,7 @@ export async function verifyReddit(page, { base, ids, live }) {
       route.fulfill({
         status: providerStatus,
         contentType: 'text/html',
-        body: `<p>${providerStatus === 200 ? 'Public Reddit fixture · u/test · r/test' : 'Unavailable Reddit post'}</p><video controls></video><script>try{parent.document.body.dataset.providerEscaped='yes'}catch{document.body.dataset.parentBlocked='yes'}</script>`,
+        body: `<p>${providerStatus === 200 ? 'Public Reddit fixture · u/test · r/test' : 'Unavailable Reddit post'}</p>${new URL(route.request().url()).searchParams.get('showmedia') === 'false' ? '' : '<video controls></video>'}<script>try{parent.document.body.dataset.providerEscaped='yes'}catch{document.body.dataset.parentBlocked='yes'}</script>`,
       }),
     );
   }
@@ -108,6 +108,10 @@ export async function verifyReddit(page, { base, ids, live }) {
   const provider = await (await frame.elementHandle()).contentFrame();
   await provider.locator('p').waitFor();
   check(
+    (await provider.locator('video').count()) === 0,
+    'Direct summary has no playable media before Play',
+  );
+  check(
     (await provider.locator('body').getAttribute('data-parent-blocked')) ===
       'yes',
     'Direct provider cannot access parent DOM',
@@ -134,6 +138,14 @@ export async function verifyReddit(page, { base, ids, live }) {
     .elementHandle();
   const adapter = await adapterHandle.contentFrame();
   await adapter.locator('iframe').waitFor();
+  const child = await (
+    await adapter.locator('iframe').elementHandle()
+  ).contentFrame();
+  await child.locator('p').waitFor();
+  check(
+    (await child.locator('video').count()) === 0,
+    'Legacy opaque adapter preserves the content-free provider setting',
+  );
   check(
     (await adapter.locator('body').getAttribute('data-parent-blocked')) ===
       'yes',

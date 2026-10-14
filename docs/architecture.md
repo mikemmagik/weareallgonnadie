@@ -131,3 +131,23 @@ TikTok has a 9:16 player capped at 400px. Instagram distinguishes /p/ from /reel
 /tv/, reserves portrait media plus provider chrome, and permits provider scrolling
 for unusually long content. Carousel identity cannot be inferred from /p/ alone.
 See [MEDIA-UX-001 handoff](media-ux-001-handoff.md) for evidence and limitations.
+
+## MEDIA-FIX-002 playback boundary
+
+Session consent permits external requests, not Reddit playback. Full Reddit URLs
+and revalidated short-link identities initially use the official content-free
+`showmedia=false` embed near the viewport. It preserves Reddit's title, attribution
+and actions. The host's keyboard-accessible **Play / view Reddit media** button
+removes that option only on a trusted visitor action, then focuses the provider
+frame. The provider may immediately play video/animate GIF-labelled media after
+this deliberate action. Revocation removes the frame/button and invalidates pending
+resolution; reallow creates a summary without restoring playback activation.
+
+The documented oEmbed response is rich markup, not a reliable image/text/video
+classification. Thus full still images and body text also require the view action;
+no title/extension guessing, post scraping, new metadata service or wire-contract
+change is used. Inline full rendering remains supported after activation. The
+legacy opaque adapter uses `data-embed-showmedia="false"` and retains source links;
+it does not automatically load full post content. Provider restrictions may still
+prevent its summary from rendering. Browser test tooling alone inspects provider
+media state; production host code never reads the provider DOM.

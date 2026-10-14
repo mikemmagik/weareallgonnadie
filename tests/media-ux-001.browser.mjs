@@ -149,7 +149,7 @@ export async function verifyMediaUx(page, base) {
       route.fulfill({
         status: host === 'embed.reddit.com' ? redditStatus : 200,
         contentType: 'text/html',
-        body: `<!doctype html><style>html,body{margin:0;height:100%;box-sizing:border-box}body{display:flex;flex-direction:column}main{flex:1;min-height:0;background:#345}footer{flex-shrink:0;height:80px}</style><header>Provider attribution</header><main>Deterministic ${host} ${route.request().url().includes('0000000002') ? 'image carousel' : 'media'} fixture</main><footer><button>Play</button><button>Next image</button><a href="https://${host}/">Original provider</a></footer><script>try{parent.document.body.dataset.escaped='yes'}catch{document.body.dataset.parentBlocked='yes'}</script>`,
+        body: `<!doctype html><style>html,body{margin:0;height:100%;box-sizing:border-box}body{display:flex;flex-direction:column}main{flex:1;min-height:0;background:#345}footer{flex-shrink:0;height:80px}</style><header>Provider attribution</header><main>Deterministic ${host} ${route.request().url().includes('0000000002') ? 'image carousel' : 'media'} fixture${host === 'embed.reddit.com' && new URL(route.request().url()).searchParams.get('showmedia') !== 'false' ? '<video controls muted></video>' : ''}</main><footer><button>Play</button><button>Next image</button><a href="https://${host}/">Original provider</a></footer><script>try{parent.document.body.dataset.escaped='yes'}catch{document.body.dataset.parentBlocked='yes'}</script>`,
       }),
     );
   }
@@ -229,6 +229,29 @@ export async function verifyMediaUx(page, base) {
     'Reload after decline remains unloaded without repeat dialog',
   );
   await settings();
+  // Footer settings legitimately scrolls to card 8. Establish distance before
+  // allowing, then observe real geometry rather than assuming a card index.
+  await page.evaluate(() => scrollTo(0, 0));
+  const geometry = () =>
+    card(8)
+      .locator('.media')
+      .evaluate((node) => {
+        const { top, bottom } = node.getBoundingClientRect();
+        return { top, bottom, height: innerHeight };
+      });
+  const settleViewport = () =>
+    page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+  await settleViewport();
+  let bounds = await geometry();
+  check(
+    bounds.top > bounds.height + 320,
+    'Lazy-load target is beyond the actual 320px loading margin',
+  );
   await allow();
   check(
     (await page.evaluate(() =>
@@ -236,9 +259,37 @@ export async function verifyMediaUx(page, base) {
     )) === 'allow',
     'Settings accept persists affirmative choice',
   );
+  await settleViewport();
+  bounds = await geometry();
+  check(
+    bounds.top > bounds.height + 320,
+    'Allow/focus restoration preserves the measured distance',
+  );
   check(
     (await card(8).locator('iframe').count()) === 0,
     'Distant cards stay unloaded after allowing',
+  );
+  // Earlier portrait players can change height as they load. Position against
+  // current geometry until the target is visible, rather than a stale offset.
+  await page.waitForFunction(() => {
+    const node = document.querySelector(
+      '[data-post-id="00000000-0000-4000-8000-000000000008"] .media',
+    );
+    const bounds = node.getBoundingClientRect();
+    if (bounds.top >= 0 && bounds.bottom <= innerHeight) return true;
+    node.scrollIntoView({ block: 'center', behavior: 'instant' });
+    return false;
+  });
+  await settleViewport();
+  bounds = await geometry();
+  check(
+    bounds.top <= bounds.height + 320 && bounds.bottom >= -320,
+    'Lazy-load target enters the measured loading margin',
+  );
+  await card(8).locator('iframe').waitFor();
+  check(
+    (await card(8).locator('iframe').count()) === 1,
+    'Entering loading margin creates the deferred player once',
   );
   await card(1).scrollIntoViewIfNeeded();
   await card(1).locator('img').waitFor();
@@ -284,12 +335,57 @@ export async function verifyMediaUx(page, base) {
       await card(n).locator('.embed-hint a').isVisible(),
       `Media ${n} keeps recovery link`,
     );
-    if (n === 7)
+    if (n === 7) {
+      check(
+        new URL(await frame.getAttribute('src')).searchParams.get(
+          'showmedia',
+        ) === 'false',
+        'Reddit loads only its summary after session consent',
+      );
+      const play = card(n).getByRole('button', {
+        name: /Play \/ view Reddit media/,
+      });
+      check(
+        await play.isVisible(),
+        'Reddit has an explicit playback/view action, not another consent prompt',
+      );
+      check(
+        (await provider.locator('video,audio').count()) === 0,
+        'Reddit summary contains no playable media before Play',
+      );
+      await play.evaluate((node) => node.click());
+      check(
+        new URL(await frame.getAttribute('src')).searchParams.get(
+          'showmedia',
+        ) === 'false',
+        'Untrusted scripted click does not authorize Reddit playback',
+      );
+      await play.focus();
+      await page.keyboard.press('Enter');
+      await provider.waitForURL((url) => !url.searchParams.has('showmedia'), {
+        waitUntil: 'load',
+      });
+      await frame.waitFor({ state: 'visible' });
+      check(
+        !new URL(await frame.getAttribute('src')).searchParams.has('showmedia'),
+        'Keyboard Play activates Reddit full content',
+      );
+      check(
+        await frame.evaluate((node) => document.activeElement === node),
+        'Activation transfers focus to the official Reddit frame',
+      );
+      await provider.locator('footer').waitFor();
+      await provider.locator('video').waitFor();
+      check(
+        (await play.count()) === 0,
+        'Playback/view action is removed after intentional activation',
+      );
       check(
         (await frame.getAttribute('sandbox')) ===
           'allow-scripts allow-same-origin allow-popups',
         'Reddit direct frame isolated at validated remote origin without navigation privileges',
       );
+    }
     for (const width of [320, 375, 390, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       check(
@@ -386,7 +482,12 @@ export async function verifyMediaUx(page, base) {
     await allow();
     await card(7).scrollIntoViewIfNeeded();
     await card(7).locator('iframe').waitFor();
-    await page.waitForTimeout(150);
+    check(
+      new URL(
+        await card(7).locator('iframe').getAttribute('src'),
+      ).searchParams.get('showmedia') === 'false',
+      'Reallow never restores previous Reddit playback activation',
+    );
     check(
       (await card(7).locator('.embed-hint a').isVisible()) &&
         (await card(7).locator('.post-source a').isVisible()),
@@ -492,6 +593,7 @@ export async function verifyMediaUx(page, base) {
   await page.addInitScript(() => delete window.IntersectionObserver);
   await page.reload();
   await dialog.waitFor();
+  await page.evaluate(() => scrollTo(0, 0));
   await allow();
   await card(1).scrollIntoViewIfNeeded();
   await card(1).locator('img').waitFor();

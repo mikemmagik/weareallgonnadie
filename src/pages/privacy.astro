@@ -54,9 +54,14 @@ import OperatorContact from '../components/OperatorContact.astro';
     <p>
       Third-party preview images and players remain unloaded until you choose
       ALLOW EXTERNAL CONTENT in the session-wide dialog. After allowing,
-      supported media loads as it approaches the viewport. Videos do not
-      automatically play. First-party images may load normally. Original source
-      links visit the source directly.
+      supported media loads as it approaches the viewport. Reddit initially
+      loads a post summary without post images, video or body content. Play /
+      view Reddit media loads the full post, which may immediately play video or
+      animate GIF-labelled media. Still images and full text use the same action
+      because the embed does not reliably identify the content type in advance.
+      This is a playback/view action; your session media choice still applies.
+      Other players request no autoplay. First-party images may load normally.
+      Original source links visit the source directly.
     </p>
     <p>
       Loading an image sends your IP address and browser request information to
@@ -65,12 +70,15 @@ import OperatorContact from '../components/OperatorContact.astro';
     </p>
     <p>
       Optional YouTube, TikTok and Instagram players load in restricted frames.
-      Reddit content runs in an opaque sandbox that cannot access the parent
-      page's DOM. Loading these embeds sends requests to the provider and may
-      cause additional requests to its service partners. The provider may
-      receive request information, recognize an existing account, or use cookies
-      and similar technologies, subject to your browser settings. No provider
-      scripts or frames load before your action.
+      Direct Reddit embeds use a sandboxed cross-origin iframe. Its scripts run
+      at Reddit's origin, with same-origin permission referring to Reddit, not
+      this website. Browser origin isolation prevents access to this page's DOM.
+      The legacy Reddit adapter retains an opaque sandbox, requests content-free
+      summaries and keeps original links. Loading these embeds sends requests to
+      the provider and may cause additional requests to its service partners.
+      The provider may receive request information, recognize an existing
+      account, or use cookies and similar technologies, subject to your browser
+      settings. No provider scripts or frames load before your action.
     </p>
     <p>
       Your choice applies to all external media in this tab for the browsing

@@ -107,6 +107,7 @@ test('adapter constructs the official widget with opaque sandbox, scoped CSP and
   assert.match(response.headers.get('permissions-policy')!, /autoplay=\(\)/);
   const html = await response.text();
   assert.match(html, /class="reddit-embed-bq"/);
+  assert.match(html, /data-embed-showmedia="false"/);
   assert.match(html, /https:\/\/embed.reddit.com\/widgets.js/);
   assert.match(html, /Open original Reddit post/);
   assert.match(html, /unavailable, deleted or restricted/);
@@ -182,5 +183,27 @@ test('MEDIA-UX-001 provider layouts distinguish TikTok, Instagram Reel and post 
       playerFor({ kind: 'provider', provider, id, url })?.shape,
       shape,
     );
+  }
+});
+
+test('Reddit normal videos, animated media, images and text all start with the supported content-free summary', () => {
+  for (const [community, id] of [
+    ['aww', 'j1bvtv'],
+    ['formula1', '7qn3db'],
+    ['aww', 'crpjwk'],
+    ['IAmA', 'z1c9z'],
+  ]) {
+    const url = `https://www.reddit.com/r/${community}/comments/${id}/`;
+    const player = playerFor({
+      kind: 'provider',
+      provider: 'reddit',
+      id: id!,
+      url,
+    });
+    assert.ok(player);
+    const src = new URL(player.src);
+    assert.equal(src.origin, 'https://embed.reddit.com');
+    assert.equal(src.searchParams.get('showmedia'), 'false');
+    assert.equal(src.searchParams.has('autoplay'), false);
   }
 });

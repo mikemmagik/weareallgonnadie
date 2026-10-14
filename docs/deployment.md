@@ -184,3 +184,17 @@ It replaces the historical per-item click behavior above. See the
 remaining Firefox/native Safari/device checks. Rebuild before starting local QA;
 restart a local asset server after a build, and do not rebuild while testing its
 existing asset manifest. This is a local development concern, not a staging change.
+
+## MEDIA-FIX-002 local remediation
+
+No staging, deployment, DNS, secrets, schema, remote D1 or automation changes.
+Static and Worker security headers remain unchanged. Rebuild the frontend and
+restart the local asset server before acceptance. The direct Reddit default now
+requests content-free summaries; a trusted Play / view action enables full content.
+The legacy adapter uses the same supported content-free widget option inside its
+existing opaque sandbox. No new provider origins or permissions are needed.
+
+See [the remediation handoff](media-fix-002-handoff.md) for exact baseline/playback
+results, repeatable geometry checks, compatibility tradeoffs and independent QA.
+Chromium's Reddit 403 and unavailable Firefox must not be credited as live playback
+passes. This remediation does not authorize promotion of the existing staging site.

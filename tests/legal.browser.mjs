@@ -317,6 +317,28 @@ export async function verifyLegal(page, base) {
     );
   for (const route of ['legal', 'privacy']) {
     const response = await page.goto(`${base}/${route}`);
+    if (route === 'privacy') {
+      const notice = await page.locator('#media').locator('..').innerText();
+      check(
+        notice.includes('sandboxed cross-origin iframe') &&
+          notice.includes("Reddit's origin"),
+        'Privacy accurately describes the direct Reddit origin',
+      );
+      check(
+        notice.includes('legacy Reddit adapter retains an opaque sandbox'),
+        'Privacy scopes the opaque sandbox to the legacy adapter',
+      );
+      check(
+        notice.includes('may immediately play video') &&
+          notice.includes('same action'),
+        'Privacy describes deliberate Reddit activation and image/text limitations',
+      );
+      check(
+        notice.includes('sessionStorage') &&
+          !notice.includes('Videos do not automatically play'),
+        'Session storage remains disclosed without the contradicted blanket promise',
+      );
+    }
     check(response.status() === 200, `/${route} static route exists`);
     check(
       (await page.locator('a[href^="mailto:"]').count()) === 0,

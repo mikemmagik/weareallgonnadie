@@ -96,7 +96,7 @@ export async function redditAdapter(request: Request): Promise<Response> {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reddit embed</title>
 <style>html{color-scheme:dark}body{margin:0;padding:8px;background:#101414;color:#d6ded9;font:14px system-ui}a{color:#e3eee8}iframe{max-width:100%}p{line-height:1.5}</style></head><body>
 <p>Reddit · ${source}</p>
-${widgetUrl ? `<blockquote class="reddit-embed-bq" data-embed-theme="dark" data-embed-height="500"><a href="${escape(widgetUrl)}">View post on Reddit</a></blockquote>` : ''}
+${widgetUrl ? `<blockquote class="reddit-embed-bq" data-embed-theme="dark" data-embed-showmedia="false" data-embed-height="500"><a href="${escape(widgetUrl)}">View post on Reddit</a></blockquote>` : ''}
 <p id="status">${widgetUrl ? 'Reddit unavailable, deleted or restricted? Open the original post.' : 'Reddit embed unavailable or unsupported. Open the original post.'}</p>
 ${widgetUrl ? `<script nonce="${nonce}" async src="https://embed.reddit.com/widgets.js" charset="UTF-8"></script>` : ''}
 </body></html>`;

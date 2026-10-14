@@ -136,6 +136,36 @@ function mediaFor(post: Post): HTMLElement | null {
         );
         frame.src = src;
         media.replaceChildren(frame);
+        if (player.provider === 'Reddit') {
+          // Reddit's supported content-free embed preserves its title/attribution.
+          // oEmbed does not classify videos/GIFs versus still images/text, so all
+          // post content stays gated. Consent permits requests, never playback.
+          const play = element(
+            'button',
+            'reddit-play terminal-button',
+            'Play / view Reddit media',
+          );
+          play.type = 'button';
+          play.setAttribute(
+            'aria-label',
+            `Play / view Reddit media: ${post.title}`,
+          );
+          play.addEventListener('click', (event) => {
+            if (
+              !event.isTrusted ||
+              current !== generation ||
+              !media.isConnected
+            )
+              return;
+            const activated = new URL(src);
+            if (activated.origin !== 'https://embed.reddit.com') return;
+            activated.searchParams.delete('showmedia');
+            frame.src = activated.href;
+            play.remove();
+            frame.focus({ preventScroll: true });
+          });
+          media.append(play);
+        }
       },
       pause,
     );

@@ -80,7 +80,7 @@ export function playerFor(embed: Embed | null): Player | null {
     return {
       src: post.short
         ? `/embed/reddit?url=${encodeURIComponent(post.url)}&resolve=1`
-        : `https://embed.reddit.com${new URL(post.url).pathname}?embed=true&theme=dark&ref_source=embed&ref=share`,
+        : `https://embed.reddit.com${new URL(post.url).pathname}?embed=true&theme=dark&showmedia=false&ref_source=embed&ref=share`,
       shape: 'reddit',
       provider: 'Reddit',
     };
