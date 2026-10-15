@@ -1,14 +1,14 @@
-name: MEDIA-QA-003 Firefox Linux
+name: MEDIA-QA-004 Firefox Linux
 on:
   push:
-    branches: [qa/media-polish-001]
+    branches: [qa/media-fix-003]
     paths:
       - .github/workflows/media-firefox-qa.yml
 permissions:
   contents: read
 jobs:
   firefox:
-    if: github.ref == 'refs/heads/qa/media-polish-001'
+    if: github.ref == 'refs/heads/qa/media-fix-003'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
@@ -17,7 +17,7 @@ jobs:
       WRANGLER_SEND_METRICS: 'false'
       CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: 'false'
       WAAGD_BROWSERS: firefox
-      WAAGD_FRONTEND_BASE: http://127.0.0.1:8796
+      WAAGD_FOCUS_REPEATS: '3'
     steps:
       - name: Check out QA revision
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -28,134 +28,60 @@ jobs:
         with:
           node-version: '24'
       - name: Prepare isolated test tooling
+        id: tooling
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p work/media-qa-003 output/media-qa-003/logs output/playwright
-          npm ci 2>&1 | tee output/media-qa-003/logs/npm-ci.log
-          npm install --prefix "$RUNNER_TEMP/waagd-playwright" --no-save --package-lock=false --ignore-scripts playwright@1.64.0 2>&1 | tee output/media-qa-003/logs/tooling.log
+          mkdir -p output/media-qa-004/logs
+          { uname -a; cat /etc/os-release; node --version; npm --version; git rev-parse HEAD; } | tee output/media-qa-004/logs/environment.log
+          test "$(uname -m)" = x86_64
+          npm ci 2>&1 | tee output/media-qa-004/logs/npm-ci.log
+          npm install --prefix "$RUNNER_TEMP/waagd-playwright" --no-save --package-lock=false --ignore-scripts playwright@1.64.0 2>&1 | tee output/media-qa-004/logs/tooling.log
           echo "WAAGD_PLAYWRIGHT_MODULE=$RUNNER_TEMP/waagd-playwright/node_modules/playwright/index.mjs" >> "$GITHUB_ENV"
-          node "$RUNNER_TEMP/waagd-playwright/node_modules/playwright/cli.js" install --with-deps firefox 2>&1 | tee output/media-qa-003/logs/firefox-install.log
-          npm run build:frontend 2>&1 | tee output/media-qa-003/logs/build.log
+          node "$RUNNER_TEMP/waagd-playwright/node_modules/playwright/cli.js" install --with-deps firefox 2>&1 | tee output/media-qa-004/logs/firefox-install.log
           git diff --exit-code -- package.json package-lock.json
-      - name: Prepare disposable local Worker and existing legal entry point
-        shell: bash
-        run: |
-          cat > work/media-qa-003/worker.mjs <<'QA_WORKER'
-          import { mkdtemp, writeFile, rm } from 'node:fs/promises';
-          import { tmpdir } from 'node:os';
-          import { resolve, join } from 'node:path';
-          import { execFileSync } from 'node:child_process';
-          for (const key of Object.keys(process.env)) if (/^(CLOUDFLARE_|CF_)/.test(key)) delete process.env[key];
-          const root=process.cwd();
-          const dir=await mkdtemp(join(tmpdir(),'waagd-media-qa-003-'));
-          const config=join(dir,'wrangler.json');
-          const persist=join(dir,'state');
-          process.env.XDG_CONFIG_HOME=join(dir,'config');
-          process.env.WRANGLER_LOG_PATH=join(dir,'logs');
-          await writeFile(config,JSON.stringify({name:'waagd-media-qa-003-local',main:join(root,'worker/index.ts'),compatibility_date:'2026-10-12',workers_dev:false,assets:{directory:join(root,'dist'),binding:'ASSETS',run_worker_first:['/api','/api/*','/embed/reddit'],not_found_handling:'404-page'},d1_databases:[{binding:'DB',database_name:'qa-only',database_id:'00000000-0000-0000-0000-000000000000',migrations_dir:join(root,'db/migrations'),remote:false}],vars:{API_WRITE_TOKEN:crypto.randomUUID()}}));
-          execFileSync(process.execPath,[join(root,'node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','DB','--local','--persist-to',persist,'--config',config],{cwd:dir,env:{...process.env,CI:'true'},stdio:'pipe'});
-          const {unstable_dev}=await import('wrangler');
-          const server=await unstable_dev(join(root,'worker/index.ts'),{config,local:true,persist:true,persistTo:persist,ip:'127.0.0.1',port:Number(process.env.WAAGD_QA_PORT??8796),inspectorPort:0,logLevel:'error',envFiles:[],experimental:{disableExperimentalWarning:true,disableDevRegistry:true,watch:false}});
-          const base=`http://${server.address}:${server.port}`;
-          await writeFile(resolve('output/media-qa-003/runtime.json'),JSON.stringify({base,local:true,remoteBindings:false,temporaryState:dir},null,2));
-          console.log(`QA_ONLY_READY ${base}`);
-          for(const signal of ['SIGTERM','SIGINT']) process.on(signal,async()=>{await server.stop();await rm(dir,{recursive:true,force:true});process.exit(0);});
-          QA_WORKER
-          cat > work/media-qa-003/legal.mjs <<'QA_LEGAL'
-          import assert from 'node:assert/strict';
-          import {writeFileSync} from 'node:fs';
-          import {pathToFileURL} from 'node:url';
-          import {verifyLegal} from '../../tests/legal.browser.mjs';
-          const engines=await import(pathToFileURL(process.env.WAAGD_PLAYWRIGHT_MODULE).href);
-          const results=[];
-          for(const name of process.env.WAAGD_BROWSERS.split(',')) {
-           const browser=await engines[name].launch();
-           try {const page=await browser.newPage();page.setDefaultTimeout(10000);const result=await verifyLegal(page,process.env.WAAGD_FRONTEND_BASE);assert.equal(result.passed,69);results.push({name,version:browser.version(),status:'PASS',...result});}
-           finally {await browser.close();}
-          }
-          writeFileSync('output/media-qa-003/legal-results.json',JSON.stringify(results,null,2));
-          console.log(results.map(({name,version,status,passed})=>({name,version,status,passed})));
-          QA_LEGAL
-          cat > work/media-qa-003/media-debug.mjs <<'QA_DEBUG'
-          import {writeFileSync} from 'node:fs';
-          import {pathToFileURL} from 'node:url';
-          import {verifyMediaUx} from '../../tests/media-ux-001.browser.mjs';
-          const {firefox}=await import(pathToFileURL(process.env.WAAGD_PLAYWRIGHT_MODULE).href);
-          const browser=await firefox.launch();
-          const context=await browser.newContext();
-          await context.tracing.start({screenshots:true,snapshots:true,sources:true});
-          const page=await context.newPage();page.setDefaultTimeout(10000);
-          const consoleEvents=[];page.on('console',m=>consoleEvents.push({type:m.type(),text:m.text()}));page.on('pageerror',e=>consoleEvents.push({type:'pageerror',text:String(e)}));
-          try {const result=await verifyMediaUx(page,process.env.WAAGD_FRONTEND_BASE);writeFileSync('output/media-qa-003/debug-result.json',JSON.stringify({status:'PASS',...result},null,2));}
-          catch(error){await page.screenshot({path:'output/media-qa-003/firefox-failure.png',fullPage:true});writeFileSync('output/media-qa-003/debug-result.json',JSON.stringify({status:'FAIL',error:String(error),stack:error.stack,url:page.url(),state:await page.evaluate(()=>({scrollY,buttons:[...document.querySelectorAll('button')].map(b=>({text:b.textContent,rect:b.getBoundingClientRect().toJSON()})),dialog:document.querySelector('dialog')?.outerHTML,storage:(()=>{try{return sessionStorage.getItem('waagd.external-content')}catch{return 'unavailable'}})()})),consoleEvents},null,2));process.exitCode=1;}
-          finally{await context.tracing.stop({path:'output/media-qa-003/firefox-trace.zip'});await browser.close();}
-          QA_DEBUG
-          cat > work/media-qa-003/focused.mjs <<'QA_FOCUSED'
-          import {writeFileSync} from 'node:fs';
-          import {pathToFileURL} from 'node:url';
-          const {firefox}=await import(pathToFileURL(process.env.WAAGD_PLAYWRIGHT_MODULE).href);
-          const browser=await firefox.launch();const base=process.env.WAAGD_FRONTEND_BASE;const results=[];
-          const save=()=>writeFileSync('output/media-qa-003/focused-firefox.json',JSON.stringify(results,null,2));
-          try{
-          for(const [width,activation] of [[320,'Enter'],[375,'Space'],[390,'mouse']]){
-           const context=await browser.newContext({viewport:{width,height:1000}});const page=await context.newPage();page.setDefaultTimeout(5000);
-           const url='https://www.reddit.com/r/test/comments/abc123/';
-           const post={id:'00000000-0000-4000-8000-000000000001',type:'video',origin:'telegram',url,canonical_url:null,source_item_id:null,title:'Focused Firefox activation',source:'Reddit',preview:null,embed:{kind:'provider',provider:'reddit',url,id:'abc123'},body:null,references:[],published_at:'2026-10-12T00:00:00.000Z',deleted_at:null};
-           await page.route('**/api/posts?*',r=>r.fulfill({json:{ok:true,data:{posts:[post],next_cursor:null}}}));
-           await page.route('https://embed.reddit.com/**',r=>r.fulfill({contentType:'text/html',body:'<h1>Deterministic official summary</h1><button>Provider control</button>'}));
-           const x={width,activation};results.push(x);save();
-           try{await page.goto(base);await page.getByRole('button',{name:'ALLOW EXTERNAL CONTENT',exact:true}).click();const media=page.locator('.media.reddit'),frame=media.locator('iframe');await frame.waitFor();await media.scrollIntoViewIfNeeded();const child=await(await frame.elementHandle()).contentFrame();await child.getByRole('button').waitFor();x.collapsed=(await media.boundingBox()).height;
-           const play=page.locator('.reddit-play');await play.focus();if(activation==='mouse')await play.click();else await page.keyboard.press(activation);await page.waitForFunction(()=>document.querySelector('.reddit-expanded'));
-           x.expanded=(await media.boundingBox()).height;x.focus=[];
-           for(const delay of [0,100,500]){if(delay)await page.waitForTimeout(delay);x.focus.push({delay,active:await page.evaluate(()=>({tag:document.activeElement.tagName,className:document.activeElement.className,outer:document.activeElement.outerHTML.slice(0,350)}))});save();}
-           await page.keyboard.press('Tab');x.afterTab=await page.evaluate(()=>({tag:document.activeElement.tagName,className:document.activeElement.className}));
-           await page.locator('#feed-sentinel[data-state="end"]').waitFor();await page.getByRole('button',{name:'External content settings'}).click();x.settingsOpened=await page.getByRole('dialog',{name:'EXTERNAL CONTENT'}).isVisible();
-           await page.getByRole('button',{name:'CONTINUE WITHOUT EXTERNAL CONTENT',exact:true}).click();x.revoked=(await media.boundingBox()).height;x.framesAfterRevoke=await frame.count();x.status=x.focus.at(-1).active.tag==='IFRAME'?'PASS':'FAIL FOCUS';
-           }catch(e){x.error=String(e);x.status='FAIL';}finally{save();console.log(JSON.stringify(x));await context.close();}
-          }
-          for(const [community,id]of [['aww','j1bvtv'],['formula1','7qn3db'],['aww','crpjwk'],['IAmA','z1c9z']]){
-           const context=await browser.newContext({viewport:{width:390,height:1000}});const page=await context.newPage();page.setDefaultTimeout(5000);const url=`https://www.reddit.com/r/${community}/comments/${id}/`;const responses=[];page.on('response',r=>{if(r.url().startsWith('https://embed.reddit.com/'))responses.push({url:r.url(),status:r.status()});});
-           const x={live:true,id,responses};results.push(x);save();
-           try{await page.route('**/api/posts?*',r=>r.fulfill({json:{ok:true,data:{posts:[{id:'00000000-0000-4000-8000-000000000001',type:'video',origin:'telegram',url,canonical_url:null,source_item_id:null,title:`Actual Reddit ${id}`,source:'Reddit',preview:null,embed:{kind:'provider',provider:'reddit',url,id},body:null,references:[],published_at:'2026-10-12T00:00:00.000Z',deleted_at:null}],next_cursor:null}}}));await page.goto(base);await page.getByRole('button',{name:'ALLOW EXTERNAL CONTENT',exact:true}).click();const media=page.locator('.media.reddit'),frame=media.locator('iframe');await frame.waitFor();await media.scrollIntoViewIfNeeded();await page.waitForTimeout(5000);x.collapsed=(await media.boundingBox()).height;x.original=await page.locator('.embed-hint a').getAttribute('href');x.fallbackVisible=await page.locator('.embed-hint a').isVisible();save();await page.screenshot({path:`output/media-qa-003/firefox-live-${id}-summary.png`,fullPage:true});await page.locator('.reddit-play').click();await page.waitForTimeout(5000);x.expanded=(await media.boundingBox()).height;x.status=responses.some(r=>r.status===403)?'PROVIDER 403; HOST FALLBACK VERIFIED':'LIVE CONTENT NOT VERIFIED';save();await page.screenshot({path:`output/media-qa-003/firefox-live-${id}-expanded.png`,fullPage:true});}
-           catch(e){x.error=String(e);x.status='NOT VERIFIED';}finally{save();console.log(JSON.stringify(x));await context.close();}
-          }
-          }finally{await browser.close();}
-          QA_FOCUSED
-      - name: Repeated Firefox application acceptance and real provider observations
+      - name: Validate application and build without deployment
         shell: bash
         run: |
           set -euo pipefail
-          node work/media-qa-003/worker.mjs > output/media-qa-003/logs/worker.log 2>&1 &
-          worker_pid=$!
-          trap 'kill -TERM "$worker_pid" 2>/dev/null || true; wait "$worker_pid" 2>/dev/null || true' EXIT
-          for _ in $(seq 1 60); do
-            if curl --fail --silent "$WAAGD_FRONTEND_BASE/api/posts" > /dev/null; then break; fi
-            if ! kill -0 "$worker_pid" 2>/dev/null; then cat output/media-qa-003/logs/worker.log; exit 1; fi
-            sleep 1
-          done
-          curl --fail --silent "$WAAGD_FRONTEND_BASE/api/posts" > /dev/null
-          qa_failed=0
-          timeout 100s node work/media-qa-003/focused.mjs 2>&1 | tee output/media-qa-003/logs/focused.log || qa_failed=1
-          timeout 60s node work/media-qa-003/media-debug.mjs 2>&1 | tee output/media-qa-003/logs/media-debug.log || qa_failed=1
-          for iteration in $(seq 1 5); do
-            timeout 45s node tests/media-ux-001.browser.mjs 2>&1 | tee "output/media-qa-003/logs/media-$iteration.log" || qa_failed=1
-            cp output/playwright/media-ux-001/browser-results.json "output/media-qa-003/media-$iteration.json"
-            node --input-type=module -e "import fs from 'node:fs';import assert from 'node:assert/strict';const r=JSON.parse(fs.readFileSync('output/playwright/media-ux-001/browser-results.json'));assert.equal(r.length,1);assert.equal(r[0].name,'firefox');assert.equal(r[0].status,'PASS');assert.equal(r[0].passed,176);" || qa_failed=1
-          done
-          timeout 150s node tests/media-polish-001.browser.mjs 2>&1 | tee output/media-qa-003/logs/compact.log || qa_failed=1
-          node --input-type=module -e "import fs from 'node:fs';import assert from 'node:assert/strict';const r=JSON.parse(fs.readFileSync('output/playwright/media-polish-001/compact-results.json'));assert.equal(r.length,36);assert.ok(r.every(x=>x.name==='firefox'&&x.status==='PASS'));" || qa_failed=1
-          timeout 60s node work/media-qa-003/legal.mjs 2>&1 | tee output/media-qa-003/logs/legal.log || qa_failed=1
-          timeout 120s node tests/media-fix-002.live.mjs 2>&1 | tee output/media-qa-003/logs/live-reddit.log || qa_failed=1
-          node --input-type=module -e "import fs from 'node:fs';import assert from 'node:assert/strict';const r=JSON.parse(fs.readFileSync('output/playwright/media-fix-002/live-results.json'));assert.equal(r.length,6);assert.ok(r.every(x=>x.name==='firefox'&&x.status!=='FAIL'&&x.status!=='NOT VERIFIED'));" || qa_failed=1
-          git diff --exit-code -- package.json package-lock.json src worker public shared db tests automation wrangler.jsonc
-          exit "$qa_failed"
-      - name: Upload QA logs and screenshots
+          npm run validate 2>&1 | tee output/media-qa-004/logs/validate.log
+          npm run build 2>&1 | tee output/media-qa-004/logs/build.log
+      - name: Run committed self-contained Firefox acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 600s node tests/media-fix-003.qa.mjs 2>&1 | tee output/media-qa-004/logs/firefox-runner.log
+      - name: Run independent lifecycle and gesture challenges
+        if: ${{ !cancelled() && steps.tooling.outcome != 'failure' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 300s node tests/fixtures/media-qa-004.mjs 2>&1 | tee output/media-qa-004/logs/independent-firefox.log
+      - name: Inspect result JSON and source integrity
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'QA_JSON' 2>&1 | tee output/media-qa-004/logs/json-acceptance.log
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const read = path => JSON.parse(readFileSync(path));
+          const focused = read('output/playwright/media-fix-003/firefox.json');
+          assert.equal(focused.name,'firefox'); assert.equal(focused.platform,'linux'); assert.equal(focused.status,'PASS'); assert.equal(focused.cases.length,45);
+          const compact = read('output/playwright/media-polish-001/compact-results.json');
+          assert.equal(compact.length,36); assert.ok(compact.every(x=>x.name==='firefox'&&x.status==='PASS'));
+          const qa = read('output/playwright/media-fix-003/qa-firefox.json');
+          assert.equal(qa.length,1); assert.equal(qa[0].status,'PASS'); assert.equal(qa[0].media.length,5); assert.ok(qa[0].media.every(x=>x.passed===176)); assert.equal(qa[0].legal.passed,69);
+          const independent = read('output/playwright/media-qa-004/firefox.json');
+          assert.equal(independent.results.length,20); assert.ok(independent.results.every(x=>x.status==='PASS'));
+          console.log(JSON.stringify({status:'PASS',focused:focused.cases.length,compact:compact.length,media:qa[0].media.map(x=>x.passed),legal:qa[0].legal.passed,independent:independent.results.length}));
+          QA_JSON
+          git diff --exit-code -- src worker public shared db tests automation package.json package-lock.json wrangler.jsonc
+      - name: Upload QA logs screenshots traces and results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: media-qa-003-firefox-${{ github.run_attempt }}
-          path: |
-            output/
+          name: media-qa-004-firefox-${{ github.run_attempt }}
+          path: output/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
