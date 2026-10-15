@@ -77,6 +77,20 @@ jobs:
           writeFileSync('output/media-qa-003/legal-results.json',JSON.stringify(results,null,2));
           console.log(results.map(({name,version,status,passed})=>({name,version,status,passed})));
           QA_LEGAL
+          cat > work/media-qa-003/media-debug.mjs <<'QA_DEBUG'
+          import {writeFileSync} from 'node:fs';
+          import {pathToFileURL} from 'node:url';
+          import {verifyMediaUx} from '../../tests/media-ux-001.browser.mjs';
+          const {firefox}=await import(pathToFileURL(process.env.WAAGD_PLAYWRIGHT_MODULE).href);
+          const browser=await firefox.launch();
+          const context=await browser.newContext();
+          await context.tracing.start({screenshots:true,snapshots:true,sources:true});
+          const page=await context.newPage();page.setDefaultTimeout(10000);
+          const consoleEvents=[];page.on('console',m=>consoleEvents.push({type:m.type(),text:m.text()}));page.on('pageerror',e=>consoleEvents.push({type:'pageerror',text:String(e)}));
+          try {const result=await verifyMediaUx(page,process.env.WAAGD_FRONTEND_BASE);writeFileSync('output/media-qa-003/debug-result.json',JSON.stringify({status:'PASS',...result},null,2));}
+          catch(error){await page.screenshot({path:'output/media-qa-003/firefox-failure.png',fullPage:true});writeFileSync('output/media-qa-003/debug-result.json',JSON.stringify({status:'FAIL',error:String(error),stack:error.stack,url:page.url(),state:await page.evaluate(()=>({scrollY,buttons:[...document.querySelectorAll('button')].map(b=>({text:b.textContent,rect:b.getBoundingClientRect().toJSON()})),dialog:document.querySelector('dialog')?.outerHTML,storage:sessionStorage.getItem('waagd.external-content')})),consoleEvents},null,2));process.exitCode=1;}
+          finally{await context.tracing.stop({path:'output/media-qa-003/firefox-trace.zip'});await browser.close();}
+          QA_DEBUG
       - name: Repeated Firefox application acceptance and real provider observations
         shell: bash
         run: |
@@ -90,17 +104,20 @@ jobs:
             sleep 1
           done
           curl --fail --silent "$WAAGD_FRONTEND_BASE/api/posts" > /dev/null
+          qa_failed=0
+          node work/media-qa-003/media-debug.mjs 2>&1 | tee output/media-qa-003/logs/media-debug.log || qa_failed=1
           for iteration in $(seq 1 5); do
-            node tests/media-ux-001.browser.mjs 2>&1 | tee "output/media-qa-003/logs/media-$iteration.log"
+            node tests/media-ux-001.browser.mjs 2>&1 | tee "output/media-qa-003/logs/media-$iteration.log" || qa_failed=1
             cp output/playwright/media-ux-001/browser-results.json "output/media-qa-003/media-$iteration.json"
-            node --input-type=module -e "import fs from 'node:fs';import assert from 'node:assert/strict';const r=JSON.parse(fs.readFileSync('output/playwright/media-ux-001/browser-results.json'));assert.equal(r.length,1);assert.equal(r[0].name,'firefox');assert.equal(r[0].status,'PASS');assert.equal(r[0].passed,176);"
+            node --input-type=module -e "import fs from 'node:fs';import assert from 'node:assert/strict';const r=JSON.parse(fs.readFileSync('output/playwright/media-ux-001/browser-results.json'));assert.equal(r.length,1);assert.equal(r[0].name,'firefox');assert.equal(r[0].status,'PASS');assert.equal(r[0].passed,176);" || qa_failed=1
           done
-          node tests/media-polish-001.browser.mjs 2>&1 | tee output/media-qa-003/logs/compact.log
-          node --input-type=module -e "import fs from 'node:fs';import assert from 'node:assert/strict';const r=JSON.parse(fs.readFileSync('output/playwright/media-polish-001/compact-results.json'));assert.equal(r.length,36);assert.ok(r.every(x=>x.name==='firefox'&&x.status==='PASS'));"
-          node work/media-qa-003/legal.mjs 2>&1 | tee output/media-qa-003/logs/legal.log
-          node tests/media-fix-002.live.mjs 2>&1 | tee output/media-qa-003/logs/live-reddit.log
-          node --input-type=module -e "import fs from 'node:fs';import assert from 'node:assert/strict';const r=JSON.parse(fs.readFileSync('output/playwright/media-fix-002/live-results.json'));assert.equal(r.length,6);assert.ok(r.every(x=>x.name==='firefox'&&x.status!=='FAIL'&&x.status!=='NOT VERIFIED'));"
+          node tests/media-polish-001.browser.mjs 2>&1 | tee output/media-qa-003/logs/compact.log || qa_failed=1
+          node --input-type=module -e "import fs from 'node:fs';import assert from 'node:assert/strict';const r=JSON.parse(fs.readFileSync('output/playwright/media-polish-001/compact-results.json'));assert.equal(r.length,36);assert.ok(r.every(x=>x.name==='firefox'&&x.status==='PASS'));" || qa_failed=1
+          node work/media-qa-003/legal.mjs 2>&1 | tee output/media-qa-003/logs/legal.log || qa_failed=1
+          node tests/media-fix-002.live.mjs 2>&1 | tee output/media-qa-003/logs/live-reddit.log || qa_failed=1
+          node --input-type=module -e "import fs from 'node:fs';import assert from 'node:assert/strict';const r=JSON.parse(fs.readFileSync('output/playwright/media-fix-002/live-results.json'));assert.equal(r.length,6);assert.ok(r.every(x=>x.name==='firefox'&&x.status!=='FAIL'&&x.status!=='NOT VERIFIED'));" || qa_failed=1
           git diff --exit-code -- package.json package-lock.json src worker public shared db tests automation wrangler.jsonc
+          exit "$qa_failed"
       - name: Upload QA logs and screenshots
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
