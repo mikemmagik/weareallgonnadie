@@ -1,0 +1,112 @@
+name: MEDIA-QA-003 Firefox Linux
+on:
+  push:
+    branches: [qa/media-polish-001]
+    paths:
+      - .github/workflows/media-firefox-qa.yml
+permissions:
+  contents: read
+jobs:
+  firefox:
+    if: github.ref == 'refs/heads/qa/media-polish-001'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      CI: 'true'
+      ASTRO_TELEMETRY_DISABLED: '1'
+      WRANGLER_SEND_METRICS: 'false'
+      CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: 'false'
+      WAAGD_BROWSERS: firefox
+      WAAGD_FRONTEND_BASE: http://127.0.0.1:8796
+    steps:
+      - name: Check out QA revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Use Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Prepare isolated test tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/media-qa-003 output/media-qa-003/logs output/playwright
+          npm ci 2>&1 | tee output/media-qa-003/logs/npm-ci.log
+          npm install --prefix "$RUNNER_TEMP/waagd-playwright" --no-save --package-lock=false --ignore-scripts playwright@1.64.0 2>&1 | tee output/media-qa-003/logs/tooling.log
+          echo "WAAGD_PLAYWRIGHT_MODULE=$RUNNER_TEMP/waagd-playwright/node_modules/playwright/index.mjs" >> "$GITHUB_ENV"
+          node "$RUNNER_TEMP/waagd-playwright/node_modules/playwright/cli.js" install --with-deps firefox 2>&1 | tee output/media-qa-003/logs/firefox-install.log
+          npm run build:frontend 2>&1 | tee output/media-qa-003/logs/build.log
+          git diff --exit-code -- package.json package-lock.json
+      - name: Prepare disposable local Worker and existing legal entry point
+        shell: bash
+        run: |
+          cat > work/media-qa-003/worker.mjs <<'QA_WORKER'
+          import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+          import { tmpdir } from 'node:os';
+          import { resolve, join } from 'node:path';
+          import { execFileSync } from 'node:child_process';
+          for (const key of Object.keys(process.env)) if (/^(CLOUDFLARE_|CF_)/.test(key)) delete process.env[key];
+          const root=process.cwd();
+          const dir=await mkdtemp(join(tmpdir(),'waagd-media-qa-003-'));
+          const config=join(dir,'wrangler.json');
+          const persist=join(dir,'state');
+          process.env.XDG_CONFIG_HOME=join(dir,'config');
+          process.env.WRANGLER_LOG_PATH=join(dir,'logs');
+          await writeFile(config,JSON.stringify({name:'waagd-media-qa-003-local',main:join(root,'worker/index.ts'),compatibility_date:'2026-10-12',workers_dev:false,assets:{directory:join(root,'dist'),binding:'ASSETS',run_worker_first:['/api','/api/*','/embed/reddit'],not_found_handling:'404-page'},d1_databases:[{binding:'DB',database_name:'qa-only',database_id:'00000000-0000-0000-0000-000000000000',migrations_dir:join(root,'db/migrations'),remote:false}],vars:{API_WRITE_TOKEN:'media-qa-003-disposable-only'}}));
+          execFileSync(process.execPath,[join(root,'node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','DB','--local','--persist-to',persist,'--config',config],{cwd:dir,env:{...process.env,CI:'true'},stdio:'pipe'});
+          const {unstable_dev}=await import('wrangler');
+          const server=await unstable_dev(join(root,'worker/index.ts'),{config,local:true,persist:true,persistTo:persist,ip:'127.0.0.1',port:Number(process.env.WAAGD_QA_PORT??8796),inspectorPort:0,logLevel:'error',envFiles:[],experimental:{disableExperimentalWarning:true,disableDevRegistry:true,watch:false}});
+          const base=`http://${server.address}:${server.port}`;
+          await writeFile(resolve('output/media-qa-003/runtime.json'),JSON.stringify({base,local:true,remoteBindings:false,temporaryState:dir},null,2));
+          console.log(`QA_ONLY_READY ${base}`);
+          for(const signal of ['SIGTERM','SIGINT']) process.on(signal,async()=>{await server.stop();await rm(dir,{recursive:true,force:true});process.exit(0);});
+          QA_WORKER
+          cat > work/media-qa-003/legal.mjs <<'QA_LEGAL'
+          import assert from 'node:assert/strict';
+          import {writeFileSync} from 'node:fs';
+          import {pathToFileURL} from 'node:url';
+          import {verifyLegal} from '../../tests/legal.browser.mjs';
+          const engines=await import(pathToFileURL(process.env.WAAGD_PLAYWRIGHT_MODULE).href);
+          const results=[];
+          for(const name of process.env.WAAGD_BROWSERS.split(',')) {
+           const browser=await engines[name].launch();
+           try {const page=await browser.newPage();page.setDefaultTimeout(10000);const result=await verifyLegal(page,process.env.WAAGD_FRONTEND_BASE);assert.equal(result.passed,69);results.push({name,version:browser.version(),status:'PASS',...result});}
+           finally {await browser.close();}
+          }
+          writeFileSync('output/media-qa-003/legal-results.json',JSON.stringify(results,null,2));
+          console.log(results.map(({name,version,status,passed})=>({name,version,status,passed})));
+          QA_LEGAL
+      - name: Repeated Firefox application acceptance and real provider observations
+        shell: bash
+        run: |
+          set -euo pipefail
+          node work/media-qa-003/worker.mjs > output/media-qa-003/logs/worker.log 2>&1 &
+          worker_pid=$!
+          trap 'kill -TERM "$worker_pid" 2>/dev/null || true; wait "$worker_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 60); do
+            if curl --fail --silent "$WAAGD_FRONTEND_BASE/api/posts" > /dev/null; then break; fi
+            if ! kill -0 "$worker_pid" 2>/dev/null; then cat output/media-qa-003/logs/worker.log; exit 1; fi
+            sleep 1
+          done
+          curl --fail --silent "$WAAGD_FRONTEND_BASE/api/posts" > /dev/null
+          for iteration in $(seq 1 5); do
+            node tests/media-ux-001.browser.mjs 2>&1 | tee "output/media-qa-003/logs/media-$iteration.log"
+            cp output/playwright/media-ux-001/browser-results.json "output/media-qa-003/media-$iteration.json"
+            node --input-type=module -e "import fs from 'node:fs';import assert from 'node:assert/strict';const r=JSON.parse(fs.readFileSync('output/playwright/media-ux-001/browser-results.json'));assert.equal(r.length,1);assert.equal(r[0].name,'firefox');assert.equal(r[0].status,'PASS');assert.equal(r[0].passed,176);"
+          done
+          node tests/media-polish-001.browser.mjs 2>&1 | tee output/media-qa-003/logs/compact.log
+          node --input-type=module -e "import fs from 'node:fs';import assert from 'node:assert/strict';const r=JSON.parse(fs.readFileSync('output/playwright/media-polish-001/compact-results.json'));assert.equal(r.length,36);assert.ok(r.every(x=>x.name==='firefox'&&x.status==='PASS'));"
+          node work/media-qa-003/legal.mjs 2>&1 | tee output/media-qa-003/logs/legal.log
+          node tests/media-fix-002.live.mjs 2>&1 | tee output/media-qa-003/logs/live-reddit.log
+          node --input-type=module -e "import fs from 'node:fs';import assert from 'node:assert/strict';const r=JSON.parse(fs.readFileSync('output/playwright/media-fix-002/live-results.json'));assert.equal(r.length,6);assert.ok(r.every(x=>x.name==='firefox'&&x.status!=='FAIL'&&x.status!=='NOT VERIFIED'));"
+          git diff --exit-code -- package.json package-lock.json src worker public shared db tests automation wrangler.jsonc
+      - name: Upload QA logs and screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: media-qa-003-firefox-${{ github.run_attempt }}
+          path: |
+            output/
+          if-no-files-found: error
+          retention-days: 7
