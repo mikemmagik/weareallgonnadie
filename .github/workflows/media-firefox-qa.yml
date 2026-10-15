@@ -53,7 +53,7 @@ jobs:
           const persist=join(dir,'state');
           process.env.XDG_CONFIG_HOME=join(dir,'config');
           process.env.WRANGLER_LOG_PATH=join(dir,'logs');
-          await writeFile(config,JSON.stringify({name:'waagd-media-qa-003-local',main:join(root,'worker/index.ts'),compatibility_date:'2026-10-12',workers_dev:false,assets:{directory:join(root,'dist'),binding:'ASSETS',run_worker_first:['/api','/api/*','/embed/reddit'],not_found_handling:'404-page'},d1_databases:[{binding:'DB',database_name:'qa-only',database_id:'00000000-0000-0000-0000-000000000000',migrations_dir:join(root,'db/migrations'),remote:false}],vars:{API_WRITE_TOKEN:'media-qa-003-disposable-only'}}));
+          await writeFile(config,JSON.stringify({name:'waagd-media-qa-003-local',main:join(root,'worker/index.ts'),compatibility_date:'2026-10-12',workers_dev:false,assets:{directory:join(root,'dist'),binding:'ASSETS',run_worker_first:['/api','/api/*','/embed/reddit'],not_found_handling:'404-page'},d1_databases:[{binding:'DB',database_name:'qa-only',database_id:'00000000-0000-0000-0000-000000000000',migrations_dir:join(root,'db/migrations'),remote:false}],vars:{API_WRITE_TOKEN:crypto.randomUUID()}}));
           execFileSync(process.execPath,[join(root,'node_modules/wrangler/bin/wrangler.js'),'d1','migrations','apply','DB','--local','--persist-to',persist,'--config',config],{cwd:dir,env:{...process.env,CI:'true'},stdio:'pipe'});
           const {unstable_dev}=await import('wrangler');
           const server=await unstable_dev(join(root,'worker/index.ts'),{config,local:true,persist:true,persistTo:persist,ip:'127.0.0.1',port:Number(process.env.WAAGD_QA_PORT??8796),inspectorPort:0,logLevel:'error',envFiles:[],experimental:{disableExperimentalWarning:true,disableDevRegistry:true,watch:false}});
@@ -88,9 +88,40 @@ jobs:
           const page=await context.newPage();page.setDefaultTimeout(10000);
           const consoleEvents=[];page.on('console',m=>consoleEvents.push({type:m.type(),text:m.text()}));page.on('pageerror',e=>consoleEvents.push({type:'pageerror',text:String(e)}));
           try {const result=await verifyMediaUx(page,process.env.WAAGD_FRONTEND_BASE);writeFileSync('output/media-qa-003/debug-result.json',JSON.stringify({status:'PASS',...result},null,2));}
-          catch(error){await page.screenshot({path:'output/media-qa-003/firefox-failure.png',fullPage:true});writeFileSync('output/media-qa-003/debug-result.json',JSON.stringify({status:'FAIL',error:String(error),stack:error.stack,url:page.url(),state:await page.evaluate(()=>({scrollY,buttons:[...document.querySelectorAll('button')].map(b=>({text:b.textContent,rect:b.getBoundingClientRect().toJSON()})),dialog:document.querySelector('dialog')?.outerHTML,storage:sessionStorage.getItem('waagd.external-content')})),consoleEvents},null,2));process.exitCode=1;}
+          catch(error){await page.screenshot({path:'output/media-qa-003/firefox-failure.png',fullPage:true});writeFileSync('output/media-qa-003/debug-result.json',JSON.stringify({status:'FAIL',error:String(error),stack:error.stack,url:page.url(),state:await page.evaluate(()=>({scrollY,buttons:[...document.querySelectorAll('button')].map(b=>({text:b.textContent,rect:b.getBoundingClientRect().toJSON()})),dialog:document.querySelector('dialog')?.outerHTML,storage:(()=>{try{return sessionStorage.getItem('waagd.external-content')}catch{return 'unavailable'}})()})),consoleEvents},null,2));process.exitCode=1;}
           finally{await context.tracing.stop({path:'output/media-qa-003/firefox-trace.zip'});await browser.close();}
           QA_DEBUG
+          cat > work/media-qa-003/focused.mjs <<'QA_FOCUSED'
+          import {writeFileSync} from 'node:fs';
+          import {pathToFileURL} from 'node:url';
+          const {firefox}=await import(pathToFileURL(process.env.WAAGD_PLAYWRIGHT_MODULE).href);
+          const browser=await firefox.launch();const base=process.env.WAAGD_FRONTEND_BASE;const results=[];
+          const save=()=>writeFileSync('output/media-qa-003/focused-firefox.json',JSON.stringify(results,null,2));
+          try{
+          for(const [width,activation] of [[320,'Enter'],[375,'Space'],[390,'mouse']]){
+           const context=await browser.newContext({viewport:{width,height:1000}});const page=await context.newPage();page.setDefaultTimeout(5000);
+           const url='https://www.reddit.com/r/test/comments/abc123/';
+           const post={id:'00000000-0000-4000-8000-000000000001',type:'video',origin:'telegram',url,canonical_url:null,source_item_id:null,title:'Focused Firefox activation',source:'Reddit',preview:null,embed:{kind:'provider',provider:'reddit',url,id:'abc123'},body:null,references:[],published_at:'2026-10-12T00:00:00.000Z',deleted_at:null};
+           await page.route('**/api/posts?*',r=>r.fulfill({json:{ok:true,data:{posts:[post],next_cursor:null}}}));
+           await page.route('https://embed.reddit.com/**',r=>r.fulfill({contentType:'text/html',body:'<h1>Deterministic official summary</h1><button>Provider control</button>'}));
+           const x={width,activation};results.push(x);save();
+           try{await page.goto(base);await page.getByRole('button',{name:'ALLOW EXTERNAL CONTENT',exact:true}).click();const media=page.locator('.media.reddit'),frame=media.locator('iframe');await frame.waitFor();await media.scrollIntoViewIfNeeded();const child=await(await frame.elementHandle()).contentFrame();await child.getByRole('button').waitFor();x.collapsed=(await media.boundingBox()).height;
+           const play=page.locator('.reddit-play');await play.focus();if(activation==='mouse')await play.click();else await page.keyboard.press(activation);await page.waitForFunction(()=>document.querySelector('.reddit-expanded'));
+           x.expanded=(await media.boundingBox()).height;x.focus=[];
+           for(const delay of [0,100,500]){if(delay)await page.waitForTimeout(delay);x.focus.push({delay,active:await page.evaluate(()=>({tag:document.activeElement.tagName,className:document.activeElement.className,outer:document.activeElement.outerHTML.slice(0,350)}))});save();}
+           await page.keyboard.press('Tab');x.afterTab=await page.evaluate(()=>({tag:document.activeElement.tagName,className:document.activeElement.className}));
+           await page.locator('#feed-sentinel[data-state="end"]').waitFor();await page.getByRole('button',{name:'External content settings'}).click();x.settingsOpened=await page.getByRole('dialog',{name:'EXTERNAL CONTENT'}).isVisible();
+           await page.getByRole('button',{name:'CONTINUE WITHOUT EXTERNAL CONTENT',exact:true}).click();x.revoked=(await media.boundingBox()).height;x.framesAfterRevoke=await frame.count();x.status=x.focus.at(-1).active.tag==='IFRAME'?'PASS':'FAIL FOCUS';
+           }catch(e){x.error=String(e);x.status='FAIL';}finally{save();console.log(JSON.stringify(x));await context.close();}
+          }
+          for(const [community,id]of [['aww','j1bvtv'],['formula1','7qn3db'],['aww','crpjwk'],['IAmA','z1c9z']]){
+           const context=await browser.newContext({viewport:{width:390,height:1000}});const page=await context.newPage();page.setDefaultTimeout(5000);const url=`https://www.reddit.com/r/${community}/comments/${id}/`;const responses=[];page.on('response',r=>{if(r.url().startsWith('https://embed.reddit.com/'))responses.push({url:r.url(),status:r.status()});});
+           const x={live:true,id,responses};results.push(x);save();
+           try{await page.route('**/api/posts?*',r=>r.fulfill({json:{ok:true,data:{posts:[{id:'00000000-0000-4000-8000-000000000001',type:'video',origin:'telegram',url,canonical_url:null,source_item_id:null,title:`Actual Reddit ${id}`,source:'Reddit',preview:null,embed:{kind:'provider',provider:'reddit',url,id},body:null,references:[],published_at:'2026-10-12T00:00:00.000Z',deleted_at:null}],next_cursor:null}}}));await page.goto(base);await page.getByRole('button',{name:'ALLOW EXTERNAL CONTENT',exact:true}).click();const media=page.locator('.media.reddit'),frame=media.locator('iframe');await frame.waitFor();await media.scrollIntoViewIfNeeded();await page.waitForTimeout(5000);x.collapsed=(await media.boundingBox()).height;x.original=await page.locator('.embed-hint a').getAttribute('href');x.fallbackVisible=await page.locator('.embed-hint a').isVisible();save();await page.screenshot({path:`output/media-qa-003/firefox-live-${id}-summary.png`,fullPage:true});await page.locator('.reddit-play').click();await page.waitForTimeout(5000);x.expanded=(await media.boundingBox()).height;x.status=responses.some(r=>r.status===403)?'PROVIDER 403; HOST FALLBACK VERIFIED':'LIVE CONTENT NOT VERIFIED';save();await page.screenshot({path:`output/media-qa-003/firefox-live-${id}-expanded.png`,fullPage:true});}
+           catch(e){x.error=String(e);x.status='NOT VERIFIED';}finally{save();console.log(JSON.stringify(x));await context.close();}
+          }
+          }finally{await browser.close();}
+          QA_FOCUSED
       - name: Repeated Firefox application acceptance and real provider observations
         shell: bash
         run: |
@@ -105,16 +136,17 @@ jobs:
           done
           curl --fail --silent "$WAAGD_FRONTEND_BASE/api/posts" > /dev/null
           qa_failed=0
-          node work/media-qa-003/media-debug.mjs 2>&1 | tee output/media-qa-003/logs/media-debug.log || qa_failed=1
+          timeout 100s node work/media-qa-003/focused.mjs 2>&1 | tee output/media-qa-003/logs/focused.log || qa_failed=1
+          timeout 60s node work/media-qa-003/media-debug.mjs 2>&1 | tee output/media-qa-003/logs/media-debug.log || qa_failed=1
           for iteration in $(seq 1 5); do
-            node tests/media-ux-001.browser.mjs 2>&1 | tee "output/media-qa-003/logs/media-$iteration.log" || qa_failed=1
+            timeout 45s node tests/media-ux-001.browser.mjs 2>&1 | tee "output/media-qa-003/logs/media-$iteration.log" || qa_failed=1
             cp output/playwright/media-ux-001/browser-results.json "output/media-qa-003/media-$iteration.json"
             node --input-type=module -e "import fs from 'node:fs';import assert from 'node:assert/strict';const r=JSON.parse(fs.readFileSync('output/playwright/media-ux-001/browser-results.json'));assert.equal(r.length,1);assert.equal(r[0].name,'firefox');assert.equal(r[0].status,'PASS');assert.equal(r[0].passed,176);" || qa_failed=1
           done
-          node tests/media-polish-001.browser.mjs 2>&1 | tee output/media-qa-003/logs/compact.log || qa_failed=1
+          timeout 150s node tests/media-polish-001.browser.mjs 2>&1 | tee output/media-qa-003/logs/compact.log || qa_failed=1
           node --input-type=module -e "import fs from 'node:fs';import assert from 'node:assert/strict';const r=JSON.parse(fs.readFileSync('output/playwright/media-polish-001/compact-results.json'));assert.equal(r.length,36);assert.ok(r.every(x=>x.name==='firefox'&&x.status==='PASS'));" || qa_failed=1
-          node work/media-qa-003/legal.mjs 2>&1 | tee output/media-qa-003/logs/legal.log || qa_failed=1
-          node tests/media-fix-002.live.mjs 2>&1 | tee output/media-qa-003/logs/live-reddit.log || qa_failed=1
+          timeout 60s node work/media-qa-003/legal.mjs 2>&1 | tee output/media-qa-003/logs/legal.log || qa_failed=1
+          timeout 120s node tests/media-fix-002.live.mjs 2>&1 | tee output/media-qa-003/logs/live-reddit.log || qa_failed=1
           node --input-type=module -e "import fs from 'node:fs';import assert from 'node:assert/strict';const r=JSON.parse(fs.readFileSync('output/playwright/media-fix-002/live-results.json'));assert.equal(r.length,6);assert.ok(r.every(x=>x.name==='firefox'&&x.status!=='FAIL'&&x.status!=='NOT VERIFIED'));" || qa_failed=1
           git diff --exit-code -- package.json package-lock.json src worker public shared db tests automation wrangler.jsonc
           exit "$qa_failed"
