@@ -59,6 +59,7 @@ function mediaFor(post: Post): HTMLElement | null {
     let generation = 0;
     const pause = () => {
       generation++;
+      media.classList.remove('reddit-expanded');
       media.replaceChildren(pausedMedia());
     };
     pause();
@@ -160,6 +161,7 @@ function mediaFor(post: Post): HTMLElement | null {
             const activated = new URL(src);
             if (activated.origin !== 'https://embed.reddit.com') return;
             activated.searchParams.delete('showmedia');
+            media.classList.add('reddit-expanded');
             frame.src = activated.href;
             play.remove();
             frame.focus({ preventScroll: true });

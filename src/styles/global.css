@@ -440,9 +440,14 @@ dd {
 }
 .embed-media.reddit {
   aspect-ratio: auto;
-  height: 620px;
+  /* Content-free summary plus the activation button. Keep native frame scrolling
+     available for longer provider titles and controls; never crop its document. */
+  height: 300px;
   display: flex;
   flex-direction: column;
+}
+.embed-media.reddit.reddit-expanded {
+  height: 620px;
 }
 .embed-media.reddit .player-frame {
   flex: 1;

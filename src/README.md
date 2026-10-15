@@ -36,7 +36,8 @@ failures offer a dedicated retry. Telegram and monthly source references use thi
 Validated YouTube, TikTok, Instagram and Reddit frames and external previews load
 near the viewport after one session-wide consent choice. The native dialog stores
 allow/decline in sessionStorage, with footer settings and safe unavailable-storage
-handling. No per-post consent overlay remains. No autoplay; original links survive.
+handling. No per-post consent overlay remains. Session consent never grants autoplay;
+original links survive.
 TikTok uses 9:16 up to 400px; Instagram posts and Reels have separate responsive heights.
 
 Reddit uses the current official widget-generated embed.reddit.com iframe directly
@@ -45,6 +46,13 @@ its resolve=1 JSON mode resolves redd.it via bounded official oEmbed after conse
 Use the integrated Worker for short links. Unsupported or blocked content retains
 attribution and a persistent recovery link. Fixture success is separate from live
 provider eligibility. See [MEDIA-UX-001](../docs/media-ux-001-handoff.md).
+
+Reddit initially shows the official content-free summary in a 300px container,
+including the activation button. Long summaries retain native iframe scrolling.
+The explicit Play / view Reddit media action expands the container to its existing
+620px full-content size and focuses the frame without scrolling the page. Full
+content may play video/GIF media after that action; session consent alone never
+activates it. Revoking consent removes the frame and resets the compact state.
 
 Meme images use `object-fit: contain`; news previews use compact landscape frames.
 All images are lazy, asynchronously decoded, and have reserved space to limit layout
