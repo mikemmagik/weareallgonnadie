@@ -114,7 +114,42 @@ export function initializeExternalContent(): void {
   const settings = document.querySelector<HTMLElement>(
     '[data-external-settings]',
   );
-  settings?.addEventListener('click', () => {
+  let settingsPointerCancelled = false;
+  settings?.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || !event.isPrimary) return;
+    settingsPointerCancelled = false;
+    // Pagination can move the footer between down and up. Keep this gesture's
+    // click on its original button, but retain drag-away/cancel behavior.
+    const bounds = settings.getBoundingClientRect();
+    const gesture = new AbortController();
+    const options = { signal: gesture.signal };
+    settings.setPointerCapture(event.pointerId);
+    settings.addEventListener(
+      'pointermove',
+      (move) => {
+        if (
+          move.pointerId === event.pointerId &&
+          (move.clientX < bounds.left ||
+            move.clientX > bounds.right ||
+            move.clientY < bounds.top ||
+            move.clientY > bounds.bottom)
+        ) {
+          settingsPointerCancelled = true;
+          settings.releasePointerCapture(event.pointerId);
+        }
+      },
+      options,
+    );
+    settings.addEventListener(
+      'lostpointercapture',
+      () => gesture.abort(),
+      options,
+    );
+  });
+  settings?.addEventListener('click', (event) => {
+    // WebKit can still target the capturing button after capture was released.
+    // Only suppress the cancelled pointer click; keyboard clicks have detail=0.
+    if (event.detail > 0 && settingsPointerCancelled) return;
     // Safari does not focus buttons on pointer clicks by default.
     settings.focus({ preventScroll: true });
     openSettings();

@@ -16,6 +16,13 @@ const modulePath =
     .find(existsSync);
 assert.ok(modulePath, 'Install the documented browser tooling first');
 const engines = await import(pathToFileURL(modulePath).href);
+// Preserve exact host geometry assertions without Firefox protocol coordinate
+// subtraction noise after scrolling. Provider bounds still use page coordinates.
+const hostBounds = (locator) =>
+  locator.evaluate((node) => {
+    const { x, y, width, height } = node.getBoundingClientRect();
+    return { x, y, width, height };
+  });
 const results = [];
 for (const name of (
   process.env.WAAGD_BROWSERS ?? 'chromium,firefox,webkit'
@@ -102,8 +109,8 @@ for (const name of (
             .click();
           await frame.waitFor();
           await media.scrollIntoViewIfNeeded();
-          const collapsed = await media.boundingBox();
-          const summaryFrame = await frame.boundingBox();
+          const collapsed = await hostBounds(media);
+          const summaryFrame = await hostBounds(frame);
           assert.equal(
             collapsed.height,
             300,
@@ -139,7 +146,7 @@ for (const name of (
             true,
           );
           const footerBox = await footer.boundingBox();
-          const frameBox = await frame.boundingBox();
+          const frameBox = await hostBounds(frame);
           assert.ok(
             footerBox.y >= frameBox.y &&
               footerBox.y + footerBox.height <=
@@ -166,12 +173,12 @@ for (const name of (
             'false',
           );
           const before = await page.evaluate(() => scrollY);
-          const top = (await media.boundingBox()).y;
+          const top = (await hostBounds(media)).y;
           await page.keyboard.press(width % 2 ? 'Space' : 'Enter');
           await page.waitForFunction(() =>
             document.querySelector('.reddit-expanded'),
           );
-          const expanded = await media.boundingBox();
+          const expanded = await hostBounds(media);
           assert.equal(
             expanded.height,
             620,
@@ -183,6 +190,15 @@ for (const name of (
               'showmedia',
             ),
             false,
+          );
+          // Focus stays on the host card until the replacement document loads.
+          // Assert the same iframe transfer at that lifecycle boundary.
+          const fullProvider = await (
+            await frame.elementHandle()
+          ).contentFrame();
+          await fullProvider.waitForURL(
+            (url) => !url.searchParams.has('showmedia'),
+            { waitUntil: 'load' },
           );
           assert.equal(
             await frame.evaluate((node) => document.activeElement === node),
@@ -197,12 +213,6 @@ for (const name of (
             Math.abs(expanded.y - top) <= 1,
             'Expansion keeps the card top anchored',
           );
-          const fullProvider = await (
-            await frame.elementHandle()
-          ).contentFrame();
-          await fullProvider.waitForURL(
-            (url) => !url.searchParams.has('showmedia'),
-          );
           await fullProvider.locator('main > div').waitFor();
           await fullProvider
             .getByRole('button', { name: 'Provider controls' })
@@ -211,7 +221,7 @@ for (const name of (
           const fullFooter = await fullProvider
             .getByRole('button', { name: 'Provider controls' })
             .boundingBox();
-          const fullFrame = await frame.boundingBox();
+          const fullFrame = await hostBounds(frame);
           assert.ok(
             fullFooter.y >= fullFrame.y &&
               fullFooter.y + fullFooter.height <=
@@ -250,7 +260,7 @@ for (const name of (
             .click();
           assert.equal(await frame.count(), 0);
           assert.equal(
-            (await media.boundingBox()).height,
+            (await hostBounds(media)).height,
             300,
             'Revocation restores compact geometry',
           );
@@ -265,7 +275,7 @@ for (const name of (
             .click();
           await media.scrollIntoViewIfNeeded();
           await frame.waitFor();
-          assert.equal((await media.boundingBox()).height, 300);
+          assert.equal((await hostBounds(media)).height, 300);
           assert.equal(
             new URL(await frame.getAttribute('src')).searchParams.get(
               'showmedia',

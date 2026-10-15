@@ -238,7 +238,13 @@ export async function verifyLegal(page, base) {
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: 'output/playwright/legal-home-mobile.png' });
-  const before = await card(1).locator('.media').boundingBox();
+  // Read host bounds in-page: Firefox's protocol box can lose precision when
+  // subtracting far-offscreen coordinates after scrolling (205 -> 204.999969).
+  const mediaHeight = () =>
+    card(1)
+      .locator('.media')
+      .evaluate((node) => node.getBoundingClientRect().height);
+  const before = await mediaHeight();
   const imageRequest = page.waitForRequest('https://images.example/public.svg');
   await page
     .getByRole('button', { name: 'ALLOW EXTERNAL CONTENT', exact: true })
@@ -252,7 +258,7 @@ export async function verifyLegal(page, base) {
     'Image referrer restricted',
   );
   check(
-    (await card(1).locator('.media').boundingBox()).height === before.height,
+    (await mediaHeight()) === before,
     'Image consent preserves reserved mobile space',
   );
   check(

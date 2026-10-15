@@ -56,9 +56,14 @@ function mediaFor(post: Post): HTMLElement | null {
   if (player && (post.type !== 'news' || player.provider === 'Reddit')) {
     const media = element('div', `media embed-media ${player.shape}`);
     media.dataset.provider = player.provider;
+    if (player.provider === 'Reddit') {
+      media.setAttribute('role', 'group');
+      media.setAttribute('aria-label', `Reddit: ${post.title}`);
+    }
     let generation = 0;
     const pause = () => {
       generation++;
+      media.removeAttribute('tabindex');
       media.classList.remove('reddit-expanded');
       media.replaceChildren(pausedMedia());
     };
@@ -162,9 +167,28 @@ function mediaFor(post: Post): HTMLElement | null {
             if (activated.origin !== 'https://embed.reddit.com') return;
             activated.searchParams.delete('showmedia');
             media.classList.add('reddit-expanded');
+            // Keep a host focus anchor before the frame while its document is
+            // replaced. Focusing a navigating iframe synchronously loses
+            // keyboard focus in Firefox when the activation button is removed.
+            media.tabIndex = -1;
+            media.focus({ preventScroll: true });
+            frame.addEventListener(
+              'load',
+              () => {
+                // Load is only a navigation boundary, never provider-success
+                // evidence. Do not reclaim focus after user movement/revocation.
+                if (
+                  current === generation &&
+                  frame.isConnected &&
+                  document.hasFocus() &&
+                  document.activeElement === media
+                )
+                  frame.focus({ preventScroll: true });
+              },
+              { once: true },
+            );
             frame.src = activated.href;
             play.remove();
-            frame.focus({ preventScroll: true });
           });
           media.append(play);
         }

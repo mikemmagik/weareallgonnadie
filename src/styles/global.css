@@ -44,7 +44,8 @@ a:hover {
   color: var(--red);
 }
 a:focus-visible,
-button:focus-visible {
+button:focus-visible,
+.media.reddit:focus-visible {
   outline: 2px solid var(--red);
   outline-offset: 5px;
 }
