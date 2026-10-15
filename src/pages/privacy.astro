@@ -52,9 +52,16 @@ import OperatorContact from '../components/OperatorContact.astro';
   <section aria-labelledby="media">
     <h2 id="media">External images and embeds</h2>
     <p>
-      Third-party preview images and players load only after you choose LOAD
-      CONTENT on that item. First-party images may load normally. Choosing OPEN
-      ORIGINAL instead visits the source directly.
+      Third-party preview images and players remain unloaded until you choose
+      ALLOW EXTERNAL CONTENT in the session-wide dialog. After allowing,
+      supported media loads as it approaches the viewport. Reddit initially
+      loads a post summary without post images, video or body content. Play /
+      view Reddit media loads the full post, which may immediately play video or
+      animate GIF-labelled media. Still images and full text use the same action
+      because the embed does not reliably identify the content type in advance.
+      This is a playback/view action; your session media choice still applies.
+      Other players request no autoplay. First-party images may load normally.
+      Original source links visit the source directly.
     </p>
     <p>
       Loading an image sends your IP address and browser request information to
@@ -63,18 +70,33 @@ import OperatorContact from '../components/OperatorContact.astro';
     </p>
     <p>
       Optional YouTube, TikTok and Instagram players load in restricted frames.
-      Reddit's official widget runs in a separate sandbox that cannot access the
-      parent page's DOM. Loading these embeds sends requests to the provider and
-      may cause additional requests to its service partners. The provider may
-      receive request information, recognize an existing account, or use cookies
-      and similar technologies, subject to your browser settings. No provider
-      scripts or frames load before your action.
+      Direct Reddit embeds use a sandboxed cross-origin iframe. Its scripts run
+      at Reddit's origin, with same-origin permission referring to Reddit, not
+      this website. Browser origin isolation prevents access to this page's DOM.
+      The legacy Reddit adapter retains an opaque sandbox, requests content-free
+      summaries and keeps original links. Loading these embeds sends requests to
+      the provider and may cause additional requests to its service partners.
+      The provider may receive request information, recognize an existing
+      account, or use cookies and similar technologies, subject to your browser
+      settings. No provider scripts or frames load before your action.
     </p>
     <p>
-      The notice names the validated player provider or image hostname.
-      Permission applies to that item on the current page; it is not saved
-      between visits. Reloading the page requires another choice. Leaving media
-      unloaded avoids those media requests.
+      Your choice applies to all external media in this tab for the browsing
+      session. We save allow or decline in sessionStorage, so reloads and
+      navigation within that session preserve your preference. A new page
+      session asks again on its first eligible visit. No persistent consent
+      cookie or localStorage preference is created. Browsers may copy a tab
+      session when duplicating tabs or restore it with a restored session. If
+      storage is unavailable, your explicit choice applies only to this page; a
+      reload asks again and never silently assumes permission.
+    </p>
+    <p>
+      Choose External content settings in the footer to change your choice.
+      Continuing without external content preserves titles, text and source
+      links. Declining also removes media already loaded on this page and
+      prevents further automatic media requests; it cannot undo requests already
+      made or remove cookies set by providers. This preference does not
+      guarantee compliance with every privacy law.
     </p>
   </section>
   <section aria-labelledby="cookies">

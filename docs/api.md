@@ -97,7 +97,7 @@ Unknown providers must use a fallback link, not arbitrary provider metadata:
 `label` may be null. `embed: null` means no requested embed; the original post URL is
 still available as the fallback. Blocked, removed, unsupported, or unavailable embeds
 must display a safe source link instead. Render link text escaped and use
-`rel="noopener noreferrer"` on new-tab external links. The frontend constructs allowlisted HTTPS players, loads them only on click,
+`rel="noopener noreferrer"` on new-tab external links. The frontend constructs allowlisted HTTPS players, loads them near the viewport after session consent,
 and uses iframe sandbox and autoplay-denying permissions. Deployment CSP must permit
 only the documented player origins; see the frontend guide.
 
@@ -430,3 +430,16 @@ five-second deadline and a 64 KiB response limit, extracting only a validated ca
 post URL with the same ID. Unavailable/restricted responses retain an explicit fallback.
 The provider controls content eligibility. Source attribution and original links remain
 visible outside the sandbox before/after loading; autoplay permissions remain denied.
+
+## MEDIA-UX-001 rendering update (publication contract unchanged)
+
+Session-wide frontend consent supersedes the per-item click behavior above. Full
+Reddit posts use the current official widget-generated HTTPS embed.reddit.com iframe
+in a sandbox at the provider's cross-origin identity. No provider markup/script is
+inserted into the host. For short links only, GET
+`/embed/reddit?url=<validated-short-url>&resolve=1` returns `{"url": <full-url-or-null>}`
+with no-store and ordinary restrictive security headers. It uses the same bounded
+same-ID official oEmbed resolution as the legacy GET-only HTML adapter. Invalid
+methods/URLs/query keys or duplicated parameters return 400 with a null URL. This
+is a media resolver, not an authenticated publication operation. No publication
+fields, API envelopes, migrations, identity/deduplication or auth behavior changed.

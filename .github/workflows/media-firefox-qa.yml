@@ -1,0 +1,87 @@
+name: MEDIA-QA-004 Firefox Linux
+on:
+  push:
+    branches: [qa/media-fix-003]
+    paths:
+      - .github/workflows/media-firefox-qa.yml
+permissions:
+  contents: read
+jobs:
+  firefox:
+    if: github.ref == 'refs/heads/qa/media-fix-003'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      CI: 'true'
+      ASTRO_TELEMETRY_DISABLED: '1'
+      WRANGLER_SEND_METRICS: 'false'
+      CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: 'false'
+      WAAGD_BROWSERS: firefox
+      WAAGD_FOCUS_REPEATS: '3'
+    steps:
+      - name: Check out QA revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Use Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Prepare isolated test tooling
+        id: tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output/media-qa-004/logs
+          { uname -a; cat /etc/os-release; node --version; npm --version; git rev-parse HEAD; } | tee output/media-qa-004/logs/environment.log
+          test "$(uname -m)" = x86_64
+          npm ci 2>&1 | tee output/media-qa-004/logs/npm-ci.log
+          npm install --prefix "$RUNNER_TEMP/waagd-playwright" --no-save --package-lock=false --ignore-scripts playwright@1.64.0 2>&1 | tee output/media-qa-004/logs/tooling.log
+          echo "WAAGD_PLAYWRIGHT_MODULE=$RUNNER_TEMP/waagd-playwright/node_modules/playwright/index.mjs" >> "$GITHUB_ENV"
+          node "$RUNNER_TEMP/waagd-playwright/node_modules/playwright/cli.js" install --with-deps firefox 2>&1 | tee output/media-qa-004/logs/firefox-install.log
+          git diff --exit-code -- package.json package-lock.json
+      - name: Validate application and build without deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run validate 2>&1 | tee output/media-qa-004/logs/validate.log
+          npm run build 2>&1 | tee output/media-qa-004/logs/build.log
+      - name: Run committed self-contained Firefox acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 600s node tests/media-fix-003.qa.mjs 2>&1 | tee output/media-qa-004/logs/firefox-runner.log
+      - name: Run independent lifecycle and gesture challenges
+        if: ${{ !cancelled() && steps.tooling.outcome != 'failure' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 300s node tests/fixtures/media-qa-004.mjs 2>&1 | tee output/media-qa-004/logs/independent-firefox.log
+      - name: Inspect result JSON and source integrity
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'QA_JSON' 2>&1 | tee output/media-qa-004/logs/json-acceptance.log
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const read = path => JSON.parse(readFileSync(path));
+          const focused = read('output/playwright/media-fix-003/firefox.json');
+          assert.equal(focused.name,'firefox'); assert.equal(focused.platform,'linux'); assert.equal(focused.status,'PASS'); assert.equal(focused.cases.length,45);
+          const compact = read('output/playwright/media-polish-001/compact-results.json');
+          assert.equal(compact.length,36); assert.ok(compact.every(x=>x.name==='firefox'&&x.status==='PASS'));
+          const qa = read('output/playwright/media-fix-003/qa-firefox.json');
+          assert.equal(qa.length,1); assert.equal(qa[0].status,'PASS'); assert.equal(qa[0].media.length,5); assert.ok(qa[0].media.every(x=>x.passed===176)); assert.equal(qa[0].legal.passed,69);
+          const independent = read('output/playwright/media-qa-004/firefox.json');
+          assert.equal(independent.results.length,20); assert.ok(independent.results.every(x=>x.status==='PASS'));
+          console.log(JSON.stringify({status:'PASS',focused:focused.cases.length,compact:compact.length,media:qa[0].media.map(x=>x.passed),legal:qa[0].legal.passed,independent:independent.results.length}));
+          QA_JSON
+          git diff --exit-code -- src worker public shared db tests automation package.json package-lock.json wrangler.jsonc
+      - name: Upload QA logs screenshots traces and results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: media-qa-004-firefox-${{ github.run_attempt }}
+          path: output/
+          if-no-files-found: error
+          retention-days: 14

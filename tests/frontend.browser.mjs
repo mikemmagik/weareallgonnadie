@@ -136,6 +136,8 @@ export async function verifyMonitor(page, base = 'http://127.0.0.1:4321') {
   await page.route('https://www.youtube-nocookie.com/**', (route) =>
     route.abort(),
   );
+  await page.goto(`${base}/privacy`);
+  await page.evaluate(() => sessionStorage.clear());
   await page.setViewportSize({ width: 1440, height: 1100 });
   await page.goto(base);
   await page.locator('#feed-sentinel[data-state="loading"]').waitFor();
@@ -188,8 +190,9 @@ export async function verifyMonitor(page, base = 'http://127.0.0.1:4321') {
     'External meme image waits for interaction',
   );
   await page
-    .getByRole('button', { name: /Load external image: Transmission 3/ })
+    .getByRole('button', { name: 'ALLOW EXTERNAL CONTENT', exact: true })
     .click();
+  await page.locator('.post-meme').scrollIntoViewIfNeeded();
   await page.locator('.meme-media img').waitFor();
   check(
     (await page
@@ -197,7 +200,7 @@ export async function verifyMonitor(page, base = 'http://127.0.0.1:4321') {
       .evaluate((image) => getComputedStyle(image).objectFit)) === 'contain',
     'Meme aspect ratio stays readable',
   );
-  await page.getByRole('button', { name: /Load YouTube embed/ }).click();
+  await page.locator('.post-video').first().scrollIntoViewIfNeeded();
   const frame = page.locator('iframe');
   await frame.waitFor();
   check(
@@ -232,9 +235,7 @@ export async function verifyMonitor(page, base = 'http://127.0.0.1:4321') {
     (await page.locator('.fallback-player').count()) === 1,
     'Unavailable embed has clickable fallback',
   );
-  await page
-    .getByRole('button', { name: /Load external image: Transmission 7/ })
-    .click();
+  await page.locator('.post-meme').last().scrollIntoViewIfNeeded();
   await page.locator('.image-unavailable').waitFor();
   check(
     await page.locator('.image-unavailable .image-fallback').isVisible(),

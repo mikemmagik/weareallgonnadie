@@ -34,6 +34,8 @@ export async function verifyLiveReddit(page, { base, posts }) {
     page.on('requestfailed', onFailure);
     page.on('console', onConsole);
     await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(`${base}/privacy`);
+    await page.evaluate(() => sessionStorage.clear());
     await page.goto(`${base}/?post=${post.publicationId}`);
     const card = page.locator(`[data-post-id="${post.publicationId}"]`);
     await card.waitFor();
@@ -44,7 +46,10 @@ export async function verifyLiveReddit(page, { base, posts }) {
       throw new Error('Provider request before explicit click');
     if (await card.locator('iframe').count())
       throw new Error('Iframe before click');
-    await card.getByRole('button', { name: /Load Reddit embed/ }).click();
+    await page
+      .getByRole('button', { name: 'ALLOW EXTERNAL CONTENT', exact: true })
+      .click();
+    await card.scrollIntoViewIfNeeded();
     await page.waitForTimeout(12000);
     const provider = page
       .frames()

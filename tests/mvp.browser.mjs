@@ -9,6 +9,8 @@ export async function verifyMvp(page, scenario) {
     checks.push(label);
   };
   await page.unrouteAll({ behavior: 'wait' });
+  await page.goto(`${base}/privacy`);
+  await page.evaluate(() => sessionStorage.clear());
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.route('https://www.youtube-nocookie.com/**', (route) =>
     route.abort(),
@@ -62,9 +64,10 @@ export async function verifyMvp(page, scenario) {
         ),
       'LEGAL: public preview makes no request before consent',
     );
-    await publicPreview
-      .getByRole('button', { name: /Load external image/ })
+    await page
+      .getByRole('button', { name: 'ALLOW EXTERNAL CONTENT', exact: true })
       .click();
+    await publicPreview.scrollIntoViewIfNeeded();
     await publicPreview.locator('img').waitFor();
     check(
       (await publicPreview.locator('img').getAttribute('src')) ===
@@ -72,7 +75,7 @@ export async function verifyMvp(page, scenario) {
       'FIX: valid public previews remain visible',
     );
     check(
-      (await reddit.locator('button.load-player').count()) === 1,
+      (await reddit.locator('.media[data-provider="Reddit"]').count()) === 1,
       'D03: news card offers the isolated official Reddit widget',
     );
     check(
@@ -83,7 +86,8 @@ export async function verifyMvp(page, scenario) {
         .count()) === 3,
       'D03: source attribution and original link remain',
     );
-    await short.locator('button.load-player').click();
+    await short.scrollIntoViewIfNeeded();
+    await short.locator('iframe').waitFor();
     const frame = short.locator('iframe');
     check(
       (await frame.getAttribute('src')) ===
@@ -195,7 +199,11 @@ export async function verifyMvp(page, scenario) {
     'No external embed loads before a click',
   );
   const video = page.locator(`[data-post-id="${ids.video}"]`);
-  await video.locator('button.load-player').click();
+  await page
+    .getByRole('button', { name: 'ALLOW EXTERNAL CONTENT', exact: true })
+    .click();
+  await video.scrollIntoViewIfNeeded();
+  await video.locator('iframe').waitFor();
   const frame = video.locator('iframe');
   check(
     (await frame.getAttribute('src')).startsWith(

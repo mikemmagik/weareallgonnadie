@@ -8,6 +8,8 @@ export async function verifyIndependentPolicies(page, { base, ids }) {
     checks.push(label);
   };
   await page.unrouteAll({ behavior: 'wait' });
+  await page.goto(`${base}/privacy`);
+  await page.evaluate(() => sessionStorage.clear());
   for (const host of [
     'www.youtube-nocookie.com',
     'www.tiktok.com',
@@ -25,9 +27,13 @@ export async function verifyIndependentPolicies(page, { base, ids }) {
     (await page.locator('iframe').count()) === 0,
     'All three providers wait for an explicit click',
   );
+  await page
+    .getByRole('button', { name: 'ALLOW EXTERNAL CONTENT', exact: true })
+    .click();
   for (const provider of ['youtube', 'tiktok', 'instagram']) {
     const card = page.locator(`[data-post-id="${ids[provider]}"]`);
-    await card.locator('.load-player').click();
+    await card.scrollIntoViewIfNeeded();
+    await card.locator('iframe').waitFor();
     const frame = card.locator('iframe');
     const src = await frame.getAttribute('src');
     check(
@@ -64,8 +70,8 @@ export async function verifyIndependentPolicies(page, { base, ids }) {
   }
   const reddit = page.locator(`[data-post-id="${ids.reddit}"]`);
   check(
-    (await reddit.locator('button.load-player').count()) === 1,
-    'D03 independently offers click-to-load inline control',
+    (await reddit.locator('.media[data-provider="Reddit"]').count()) === 1,
+    'D03 independently offers a session-controlled Reddit embed',
   );
   check(
     (await reddit.locator('.post-source').textContent()).includes('Reddit'),

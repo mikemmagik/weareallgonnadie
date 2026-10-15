@@ -19,7 +19,13 @@ test('Reddit supports only public post-shaped URLs and matching structured ident
       id: 'crpjwk',
       url,
     });
-    assert.ok(player?.src.startsWith('/embed/reddit?url='));
+    assert.ok(
+      player?.src.startsWith(
+        url.includes('redd.it')
+          ? '/embed/reddit?url='
+          : 'https://embed.reddit.com/r/aww/comments/crpjwk/',
+      ),
+    );
   }
   for (const url of [
     'https://reddit.com/r/aww/',
@@ -101,6 +107,7 @@ test('adapter constructs the official widget with opaque sandbox, scoped CSP and
   assert.match(response.headers.get('permissions-policy')!, /autoplay=\(\)/);
   const html = await response.text();
   assert.match(html, /class="reddit-embed-bq"/);
+  assert.match(html, /data-embed-showmedia="false"/);
   assert.match(html, /https:\/\/embed.reddit.com\/widgets.js/);
   assert.match(html, /Open original Reddit post/);
   assert.match(html, /unavailable, deleted or restricted/);
@@ -116,5 +123,87 @@ test('adapter constructs the official widget with opaque sandbox, scoped CSP and
     );
     assert.equal(invalid.status, 400);
     assert.doesNotMatch(await invalid.text(), /<script/);
+  }
+});
+
+test('MEDIA-UX-001 resolver returns only validated Reddit identity as inert JSON', async () => {
+  const response = await redditAdapter(
+    new Request(
+      `https://monitor.test/embed/reddit?url=${encodeURIComponent(original)}&resolve=1`,
+    ),
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    url: 'https://www.reddit.com/r/aww/comments/crpjwk/',
+  });
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.match(
+    response.headers.get('content-security-policy')!,
+    /script-src 'self'/,
+  );
+  assert.doesNotMatch(
+    response.headers.get('content-security-policy')!,
+    /nonce|unsafe-inline|widgets.js/,
+  );
+  for (const query of [
+    'url=https://evil.example/&resolve=1',
+    `url=${encodeURIComponent(original)}&resolve=1&resolve=1`,
+    `url=${encodeURIComponent(original)}&resolve=1&html=x`,
+  ]) {
+    const invalid = await redditAdapter(
+      new Request(`https://monitor.test/embed/reddit?${query}`),
+    );
+    assert.equal(invalid.status, 400);
+    assert.deepEqual(await invalid.json(), { url: null });
+  }
+});
+
+test('MEDIA-UX-001 provider layouts distinguish TikTok, Instagram Reel and post URLs', () => {
+  for (const [provider, id, url, shape] of [
+    [
+      'tiktok',
+      '6718335390845095173',
+      'https://www.tiktok.com/@scout2015/video/6718335390845095173',
+      'tiktok',
+    ],
+    [
+      'instagram',
+      'reel/Abc_def123',
+      'https://www.instagram.com/reel/Abc_def123/',
+      'instagram-reel',
+    ],
+    [
+      'instagram',
+      'p/Abc_def123',
+      'https://www.instagram.com/p/Abc_def123/',
+      'instagram-post',
+    ],
+  ] as const) {
+    assert.equal(
+      playerFor({ kind: 'provider', provider, id, url })?.shape,
+      shape,
+    );
+  }
+});
+
+test('Reddit normal videos, animated media, images and text all start with the supported content-free summary', () => {
+  for (const [community, id] of [
+    ['aww', 'j1bvtv'],
+    ['formula1', '7qn3db'],
+    ['aww', 'crpjwk'],
+    ['IAmA', 'z1c9z'],
+  ]) {
+    const url = `https://www.reddit.com/r/${community}/comments/${id}/`;
+    const player = playerFor({
+      kind: 'provider',
+      provider: 'reddit',
+      id: id!,
+      url,
+    });
+    assert.ok(player);
+    const src = new URL(player.src);
+    assert.equal(src.origin, 'https://embed.reddit.com');
+    assert.equal(src.searchParams.get('showmedia'), 'false');
+    assert.equal(src.searchParams.has('autoplay'), false);
   }
 });

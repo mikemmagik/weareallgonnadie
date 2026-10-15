@@ -2,7 +2,7 @@
 
 Static Astro homepage with one chronological feed. No framework hydration, accounts,
 filters, reactions, sharing, source HTML injection, or third-party scripts. The feed
-uses one browser module and the exact types from `shared/contracts.ts`.
+uses small native browser modules and the exact types from `shared/contracts.ts`.
 
 ## Start and integrate
 
@@ -33,16 +33,26 @@ failures offer a dedicated retry. Telegram and monthly source references use thi
 
 ## Media and rendering
 
-YouTube, TikTok, and Instagram players use validated provider-specific paths and
-constructed HTTPS iframe sources. They load only after an explicit click, use a
-sandbox, deny autoplay via Permissions Policy, and retain an original-source link.
-Verified TikTok short-link redirects carry canonical video metadata while the original
-submitted URL remains clickable. FIX-002 adds Reddit click-to-load widgets in the
-opaque sandboxed `/embed/reddit` Worker adapter, including news and meme cards.
-Unsupported paths/identifiers and unavailable provider content retain fallback links.
-Use the integrated Worker to exercise Reddit; an Astro-only server cannot serve the adapter. Provider availability, consent screens, removals, and browser blocking can
-still prevent playback. Browser tests stub player requests and verify loading and
-fallback behavior; real provider playback requires valid public publications.
+Validated YouTube, TikTok, Instagram and Reddit frames and external previews load
+near the viewport after one session-wide consent choice. The native dialog stores
+allow/decline in sessionStorage, with footer settings and safe unavailable-storage
+handling. No per-post consent overlay remains. Session consent never grants autoplay;
+original links survive.
+TikTok uses 9:16 up to 400px; Instagram posts and Reels have separate responsive heights.
+
+Reddit uses the current official widget-generated embed.reddit.com iframe directly
+at its isolated provider origin. The opaque legacy adapter is retained for regression;
+its resolve=1 JSON mode resolves redd.it via bounded official oEmbed after consent.
+Use the integrated Worker for short links. Unsupported or blocked content retains
+attribution and a persistent recovery link. Fixture success is separate from live
+provider eligibility. See [MEDIA-UX-001](../docs/media-ux-001-handoff.md).
+
+Reddit initially shows the official content-free summary in a 300px container,
+including the activation button. Long summaries retain native iframe scrolling.
+The explicit Play / view Reddit media action expands the container to its existing
+620px full-content size and focuses the frame without scrolling the page. Full
+content may play video/GIF media after that action; session consent alone never
+activates it. Revoking consent removes the frame and resets the compact state.
 
 Meme images use `object-fit: contain`; news previews use compact landscape frames.
 All images are lazy, asynchronously decoded, and have reserved space to limit layout
@@ -61,7 +71,7 @@ HTTPS URL syntax, default ports, no credentials, and no local/reserved address/n
 Unsafe previews render without an image, including old API records. Direct browser
 image DNS/redirect destinations cannot be pinned by this renderer; see the remediation
 handoff for that remaining limit. Same-origin development illustrations may load normally; external browser fixture
-images use mocked public HTTPS URLs and require a click.
+images use mocked public HTTPS URLs and require session permission.
 INT-001 preserves wire fields and the renderers while integrating permalink reads.
 
 ## Validation
@@ -77,7 +87,7 @@ Start the Astro server on `127.0.0.1:4321`, open a CLI browser session named `do
 then run `node tests/frontend.browser.mjs`. The CLI is obtained via `npx`; a locally
 installed Playwright browser is needed. The script tests all four post types, inert
 HTML, loading/empty/error/end states, scroll pagination and retry, safe links,
-missing/broken images, click-to-load embeds, autoplay denial, and widths of 320,
+missing/broken images, session-controlled embeds, autoplay denial, and widths of 320,
 390, 768, and 1440 pixels. It saves screenshots to `output/playwright/` using
 fictional development publications. Make that output directory before running.
 
@@ -113,8 +123,8 @@ attempt. Provider HTTP failures are recorded as limitations, not mocked success.
 
 A persistent disclaimer, `/legal`, `/privacy` and footer contact links now accompany
 the feed. Configure public operator fields in `src/lib/legal.ts` and verify a real
-mailbox before launch. External preview images require LOAD CONTENT, as do player
-frames; permission is per item and resets on reload. Embed previews are not fetched
+mailbox before launch. External media now uses the session-wide preference described
+in MEDIA-UX-001; reloads preserve the session choice. Embed previews are not fetched
 separately. First-party assets may load normally. See the
 [LEGAL-001 handoff](../docs/legal-001-handoff.md) for configuration/blockers.
 

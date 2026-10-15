@@ -3,6 +3,8 @@ import { execFileSync } from 'node:child_process';
 
 export async function verifyLegal(page, base) {
   await page.unrouteAll({ behavior: 'wait' });
+  await page.goto(`${base}/privacy`);
+  await page.evaluate(() => sessionStorage.clear());
   const checks = [];
   const check = (ok, label) => {
     if (!ok) throw new Error(label);
@@ -101,6 +103,7 @@ export async function verifyLegal(page, base) {
     'www.youtube-nocookie.com',
     'www.tiktok.com',
     'www.instagram.com',
+    'embed.reddit.com',
   ])
     await page.route(`https://${host}/**`, (route) =>
       route.fulfill({
@@ -180,9 +183,8 @@ export async function verifyLegal(page, base) {
     'Missing news preview keeps compact source fallback',
   );
   check(
-    (await card(6).locator('.consent-description').innerText()).includes(
-      'hosted by Reddit.',
-    ),
+    (await card(6).locator('.media').getAttribute('data-provider')) ===
+      'Reddit',
     'Validated original identifies Reddit without provider metadata',
   );
   for (const [n, provider] of [
@@ -192,14 +194,11 @@ export async function verifyLegal(page, base) {
     [5, 'Instagram'],
   ]) {
     check(
-      (await card(n).locator('.consent-description').innerText()) ===
-        `This content is hosted by ${provider}. Loading it may share your IP address with the provider and allow third-party cookies.`,
-      `${provider}: clear just-in-time notice`,
+      await page.getByRole('dialog').isVisible(),
+      `${provider}: covered by one session-wide notice`,
     );
     check(
-      await card(n)
-        .getByRole('link', { name: 'OPEN ORIGINAL', exact: true })
-        .isVisible(),
+      await card(n).locator('.post-source a').isVisible(),
       `${provider}: original available before consent`,
     );
   }
@@ -225,10 +224,10 @@ export async function verifyLegal(page, base) {
       `Legal homepage fits ${width}px`,
     );
     check(
-      await card(1)
-        .locator('.media-consent')
-        .evaluate((node) => node.scrollHeight <= node.clientHeight),
-      `Image notice readable at ${width}px`,
+      await page
+        .getByRole('dialog')
+        .evaluate((node) => node.scrollWidth <= node.clientWidth),
+      `Session notice fits ${width}px`,
     );
     check(
       await disclaimer.evaluate(
@@ -239,11 +238,18 @@ export async function verifyLegal(page, base) {
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: 'output/playwright/legal-home-mobile.png' });
-  const before = await card(1).locator('.media').boundingBox();
+  // Read host bounds in-page: Firefox's protocol box can lose precision when
+  // subtracting far-offscreen coordinates after scrolling (205 -> 204.999969).
+  const mediaHeight = () =>
+    card(1)
+      .locator('.media')
+      .evaluate((node) => node.getBoundingClientRect().height);
+  const before = await mediaHeight();
   const imageRequest = page.waitForRequest('https://images.example/public.svg');
-  await card(1)
-    .getByRole('button', { name: /Load external image/ })
+  await page
+    .getByRole('button', { name: 'ALLOW EXTERNAL CONTENT', exact: true })
     .click();
+  await card(1).scrollIntoViewIfNeeded();
   await imageRequest;
   await card(1).locator('img').waitFor();
   check(
@@ -252,16 +258,14 @@ export async function verifyLegal(page, base) {
     'Image referrer restricted',
   );
   check(
-    (await card(1).locator('.media').boundingBox()).height === before.height,
+    (await mediaHeight()) === before,
     'Image consent preserves reserved mobile space',
   );
   check(
-    (await card(2).locator('img').count()) === 0,
-    'Consent applies to one item only',
+    (await card(2).locator('img').count()) === 1,
+    'Session consent covers nearby cards without another item action',
   );
-  await card(2)
-    .getByRole('button', { name: /Load external image/ })
-    .click();
+  await card(2).scrollIntoViewIfNeeded();
   await card(2).locator('.image-unavailable').waitFor();
   check(
     await card(2).locator('.image-fallback a').isVisible(),
@@ -272,13 +276,8 @@ export async function verifyLegal(page, base) {
     [4, 'www.tiktok.com'],
     [5, 'www.instagram.com'],
   ]) {
-    const request = page.waitForRequest(
-      (url) => new URL(url.url()).hostname === host,
-    );
-    await card(n)
-      .getByRole('button', { name: /Load .* embed/ })
-      .click();
-    await request;
+    await card(n).scrollIntoViewIfNeeded();
+    await card(n).locator('iframe').waitFor();
     check(
       (await card(n).locator('iframe').getAttribute('allow')).includes(
         "autoplay 'none'",
@@ -290,13 +289,12 @@ export async function verifyLegal(page, base) {
       `${host}: original survives loading`,
     );
   }
-  await card(6)
-    .getByRole('button', { name: /Load Reddit embed/ })
-    .click();
+  await card(6).scrollIntoViewIfNeeded();
+  await card(6).locator('iframe').waitFor();
   check(
     (await card(6).locator('iframe').getAttribute('sandbox')) ===
-      'allow-scripts allow-popups',
-    'Reddit retains opaque sandbox',
+      'allow-scripts allow-same-origin allow-popups',
+    'Reddit retains sandbox at its isolated external origin',
   );
   check(
     !requests.some((url) => url.endsWith('/unused.svg')),
@@ -305,9 +303,11 @@ export async function verifyLegal(page, base) {
   await page.reload();
   await page.locator('.post').nth(9).waitFor();
   check(
-    (await card(1).locator('img').count()) === 0 &&
-      (await page.locator('iframe').count()) === 0,
-    'Reload resets media choices',
+    !(await page.getByRole('dialog').isVisible()) &&
+      (await page.evaluate(() =>
+        sessionStorage.getItem('waagd.external-content'),
+      )) === 'allow',
+    'Reload preserves session consent',
   );
   for (const [href, label] of [
     ['/legal', 'LEGAL'],
@@ -323,6 +323,28 @@ export async function verifyLegal(page, base) {
     );
   for (const route of ['legal', 'privacy']) {
     const response = await page.goto(`${base}/${route}`);
+    if (route === 'privacy') {
+      const notice = await page.locator('#media').locator('..').innerText();
+      check(
+        notice.includes('sandboxed cross-origin iframe') &&
+          notice.includes("Reddit's origin"),
+        'Privacy accurately describes the direct Reddit origin',
+      );
+      check(
+        notice.includes('legacy Reddit adapter retains an opaque sandbox'),
+        'Privacy scopes the opaque sandbox to the legacy adapter',
+      );
+      check(
+        notice.includes('may immediately play video') &&
+          notice.includes('same action'),
+        'Privacy describes deliberate Reddit activation and image/text limitations',
+      );
+      check(
+        notice.includes('sessionStorage') &&
+          !notice.includes('Videos do not automatically play'),
+        'Session storage remains disclosed without the contradicted blanket promise',
+      );
+    }
     check(response.status() === 200, `/${route} static route exists`);
     check(
       (await page.locator('a[href^="mailto:"]').count()) === 0,

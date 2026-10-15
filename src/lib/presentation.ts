@@ -21,7 +21,7 @@ export function safeUrl(value: unknown): string | null {
 
 export interface Player {
   src: string;
-  shape: 'wide' | 'portrait' | 'reddit';
+  shape: 'wide' | 'tiktok' | 'instagram-post' | 'instagram-reel' | 'reddit';
   provider: string;
 }
 /** Sources are constructed here, never taken from external iframe markup. */
@@ -56,7 +56,7 @@ export function playerFor(embed: Embed | null): Player | null {
   ) {
     return {
       src: `https://www.tiktok.com/player/v1/${id}?autoplay=0`,
-      shape: 'portrait',
+      shape: 'tiktok',
       provider: 'TikTok',
     };
   }
@@ -70,7 +70,7 @@ export function playerFor(embed: Embed | null): Player | null {
       return null;
     return {
       src: `https://www.instagram.com/${match[1]}/${shortcode}/embed/?autoplay=0`,
-      shape: 'portrait',
+      shape: match[1] === 'p' ? 'instagram-post' : 'instagram-reel',
       provider: 'Instagram',
     };
   }
@@ -78,7 +78,9 @@ export function playerFor(embed: Embed | null): Player | null {
     const post = redditPost(embed.url);
     if (!post || post.id !== id) return null;
     return {
-      src: `/embed/reddit?url=${encodeURIComponent(post.url)}`,
+      src: post.short
+        ? `/embed/reddit?url=${encodeURIComponent(post.url)}&resolve=1`
+        : `https://embed.reddit.com${new URL(post.url).pathname}?embed=true&theme=dark&showmedia=false&ref_source=embed&ref=share`,
       shape: 'reddit',
       provider: 'Reddit',
     };

@@ -71,12 +71,24 @@ export async function redditAdapter(request: Request): Promise<Response> {
   const params = new URL(request.url).searchParams;
   const original = params.get('url');
   const post = redditPost(original);
+  const resolve = params.get('resolve') === '1';
   const valid =
     request.method === 'GET' &&
-    params.size === 1 &&
+    params.size === (resolve ? 2 : 1) &&
+    (!resolve || params.getAll('resolve').length === 1) &&
     params.getAll('url').length === 1 &&
     post;
   const widgetUrl = valid ? await redditWidgetUrl(post.url) : null;
+  // Resolve identity only after frontend consent; no provider markup enters the host.
+  if (resolve) {
+    return Response.json(
+      { url: widgetUrl },
+      {
+        status: valid ? 200 : 400,
+        headers: { ...SECURITY_HEADERS, 'Cache-Control': 'no-store' },
+      },
+    );
+  }
   const nonce = crypto.randomUUID();
   const source = post
     ? `<a href="${escape(post.url)}" target="_blank" rel="noopener noreferrer">Open original Reddit post ↗</a>`
@@ -84,7 +96,7 @@ export async function redditAdapter(request: Request): Promise<Response> {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reddit embed</title>
 <style>html{color-scheme:dark}body{margin:0;padding:8px;background:#101414;color:#d6ded9;font:14px system-ui}a{color:#e3eee8}iframe{max-width:100%}p{line-height:1.5}</style></head><body>
 <p>Reddit · ${source}</p>
-${widgetUrl ? `<blockquote class="reddit-embed-bq" data-embed-theme="dark" data-embed-height="500"><a href="${escape(widgetUrl)}">View post on Reddit</a></blockquote>` : ''}
+${widgetUrl ? `<blockquote class="reddit-embed-bq" data-embed-theme="dark" data-embed-showmedia="false" data-embed-height="500"><a href="${escape(widgetUrl)}">View post on Reddit</a></blockquote>` : ''}
 <p id="status">${widgetUrl ? 'Reddit unavailable, deleted or restricted? Open the original post.' : 'Reddit embed unavailable or unsupported. Open the original post.'}</p>
 ${widgetUrl ? `<script nonce="${nonce}" async src="https://embed.reddit.com/widgets.js" charset="UTF-8"></script>` : ''}
 </body></html>`;

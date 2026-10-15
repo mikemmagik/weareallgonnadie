@@ -108,3 +108,57 @@ The extra click avoids unsolicited provider requests. No consent persistence, pr
 new service/dependency or API change is introduced. Contact remains visibly
 unavailable until the real mailbox is configured and verified. See the
 [LEGAL-001 handoff](legal-001-handoff.md).
+
+## MEDIA-UX-001 approved product decisions
+
+The owner's request replaces per-item loading permission with one session-wide
+external-media preference in sessionStorage. No localStorage, persistent consent
+cookie or SDK is introduced. Unknown/unavailable storage asks again; explicit
+in-memory permission applies only to the current document. Escape means decline.
+Settings can replace either choice; declining unloads external media. The permanent
+homepage disclaimer and operator configuration are unchanged.
+
+Real WebKit evidence requires replacing nested opaque Reddit widgets with a direct
+official widget-generated iframe at the validated Reddit origin. Scripts and
+same-origin are safe together **only on this remote provider frame**; the host and
+legacy adapter never gain that combination. SOP plus the restricted sandbox denies
+host DOM access, top navigation and popup escape. No separate hosting origin,
+script proxy, scraping or infrastructure change is needed. The main CSP adds only
+https://embed.reddit.com to frames; every other restriction is retained. The legacy
+opaque adapter and its security assertions remain. Its resolve=1 JSON mode is needed
+only to resolve short links without putting provider markup/scripts in the host.
+
+Provider access restrictions remain provider outcomes. A visible original link and
+explanation are always present. No iframe load/error heuristic claims live success.
+TikTok uses official player defaults for visible controls and autoplay=0; Instagram
+retains its provider iframe, with separate Reel/post dimensions and no undocumented
+height messages. Long captions may need provider scrolling. Live media acceptance
+is reported separately from fixture coverage.
+
+## MEDIA-FIX-002 no-autoplay remediation
+
+MEDIA-QA-001 correctly identified muted normal/GIF-labelled Reddit playback in
+WebKit despite autoplay-denial headers/iframe permissions. Keep those permissions
+and all existing origin/sandbox restrictions; they are defense in depth, not proof
+that a provider's media stays paused. No documented current Reddit embed option
+was found that retains full content while disabling all automatic playback.
+
+Use Reddit's publisher-supported **Hide post content** option (official
+`data-embed-showmedia="false"`, translated by widgets.js to `showmedia=false`) for
+automatic post-consent summaries. Enable full content only after **Play / view
+Reddit media**. This is playback/view activation, not a second privacy consent.
+Because supported oEmbed metadata cannot reliably classify media, still images
+and full text also require activation. This compatibility tradeoff is recorded
+for independent reacceptance; automatic full image/body-text rendering is not
+claimed. Do not introduce unauthenticated Reddit scraping/API metadata to conceal
+that limitation. A future supported classification mechanism needs review before
+allowing any category of full Reddit content automatically.
+
+Sources checked 14 October 2026: [Reddit embedding help](https://support.reddithelp.com/hc/en-us/articles/360043033532-How-do-I-embed-a-Reddit-post-or-comment-in-an-article-or-other-publication),
+[official embed documentation](https://publish.reddit.com/assets/Reddit_Embed_Documentation.pdf)
+(last updated 31 March 2023), and the current [publisher](https://publish.reddit.com/embed?url=https://www.reddit.com/r/aww/comments/j1bvtv/)
+UI/generated code and [widgets.js](https://embed.reddit.com/widgets.js). The PDF
+documents embed customization/oEmbed but no autoplay switch or media classification.
+Official browser references: [WebKit muted playback policies](https://webkit.org/blog/6784/new-video-policies-for-ios/)
+and [Chromium autoplay policy](https://developer.chrome.com/blog/autoplay/).
+Actual live playback observations, rather than these policies, determine acceptance.

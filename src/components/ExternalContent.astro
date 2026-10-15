@@ -1,0 +1,43 @@
+<button type="button" class="external-settings" data-external-settings>
+  External content settings
+</button>
+<dialog
+  id="external-content-dialog"
+  class="external-dialog"
+  aria-labelledby="external-content-heading"
+  aria-describedby="external-content-description"
+>
+  <h2 id="external-content-heading">EXTERNAL CONTENT</h2>
+  <div id="external-content-description">
+    <p>
+      This website displays content hosted by third parties, including Reddit,
+      TikTok, Instagram, and other websites.
+    </p>
+    <p>
+      Loading external content may share your IP address with these providers
+      and allow them to use cookies.
+    </p>
+    <p>Your choice applies to this browsing session.</p>
+  </div>
+  <p data-storage-notice hidden>
+    Session storage is unavailable. Your choice will apply to this page only;
+    you will be asked again after navigating or reloading.
+  </p>
+  <div class="external-dialog-actions">
+    <button type="button" class="terminal-button" data-external-choice="allow">
+      ALLOW EXTERNAL CONTENT
+    </button>
+    <button
+      type="button"
+      class="terminal-button"
+      data-external-choice="decline"
+    >
+      CONTINUE WITHOUT EXTERNAL CONTENT
+    </button>
+    <a href="/privacy">Privacy Policy</a>
+  </div>
+</dialog>
+<script>
+  import { initializeExternalContent } from '../lib/external-content';
+  initializeExternalContent();
+</script>
