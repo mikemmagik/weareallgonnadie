@@ -8,7 +8,7 @@ staging/production nor changes OpenClaw, Telegram, Cloudflare, DNS, or secrets.
 There is one PublicationIntent v1 contract in `automation/core/intent.ts` and
 one publisher in `automation/core/state.ts::Publisher`. New Discovery output is
 the direct core envelope produced by `waagd-discovery` commit
-`9b2d95a002a28ca54265f290a4cd14eac7f009b9` and enters only through
+`17f59e316751079c030bf85abbe75dbbc0a4e562` and enters only through
 `automation/discovery/ingress.ts::acceptDiscoveryPublicationIntent()`.
 
 The ingress requires the separately provisioned Discovery ingress secret. Its

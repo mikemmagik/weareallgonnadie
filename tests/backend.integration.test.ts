@@ -1454,7 +1454,7 @@ test(
       );
       await reset();
       await t.test(
-        'actual Discovery 9b2d95a producer enters the core ingress once and reaches Worker/D1 and frontend parser',
+        'actual Discovery 17f59e3 producer enters the core ingress once and reaches Worker/D1 and frontend parser',
         { skip: !process.env.WAAGD_DISCOVERY_ROOT },
         async () => {
           const discoveryRoot = process.env.WAAGD_DISCOVERY_ROOT!;
@@ -1478,7 +1478,7 @@ test(
               if (init?.method === 'POST') publicationPosts++;
               return fetch(url, init);
             }),
-            new State(join(directory, 'discovery-9b2d95a-state')),
+            new State(join(directory, 'discovery-17f59e3-state')),
             { discoveryIngressToken: 'discovery-ingress-test-token' },
           );
           await publisher.setPaused('auto', false);
