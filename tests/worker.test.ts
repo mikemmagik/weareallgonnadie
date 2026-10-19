@@ -176,6 +176,58 @@ test('invalid requests use the documented envelope without touching D1', async (
     'VALIDATION_ERROR',
   );
 });
+test('the Worker accepts only complete URL-less news bulletins', async () => {
+  const bulletin = {
+    type: 'news',
+    origin: 'auto',
+    url: null,
+    canonical_url: null,
+    source_item_id: 'bulletin:2026-10-19:outage',
+    title: 'The robots have misplaced Tuesday',
+    source: 'Example News',
+    preview: null,
+    embed: null,
+    body: 'No public link is available yet.',
+    references: [],
+  };
+  // The fixture D1 intentionally throws: reaching it proves validation accepted the bulletin.
+  await error(
+    await request('/api/posts', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(bulletin),
+    }),
+    500,
+    'INTERNAL_ERROR',
+  );
+  for (const invalid of [
+    { source_item_id: null },
+    { body: null },
+    { canonical_url: 'https://example.com/news' },
+    {
+      preview: {
+        image_url: 'https://example.com/image.jpg',
+        alt_text: null,
+      },
+    },
+    {
+      embed: {
+        kind: 'link',
+        url: 'https://example.com/news',
+        label: null,
+      },
+    },
+  ])
+    await error(
+      await request('/api/posts', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ...bulletin, ...invalid }),
+      }),
+      400,
+      'VALIDATION_ERROR',
+    );
+});
 test('pagination validates query parameters and cursor contents', async () => {
   for (const query of [
     'limit=0',

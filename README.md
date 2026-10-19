@@ -5,9 +5,10 @@ monthly Humanity Changelogs. Astro builds static assets; a Cloudflare Worker ser
 public reads and authenticated writes against D1. Local automation talks only to
 that HTTP API. The site runs independently of automation or OpenClaw.
 
-**Status:** MEDIA-UX-001 on `fix/media-ux-001`; see [media handoff](docs/media-ux-001-handoff.md).
-Backend, frontend and automation retain the integrated MVP.
-No production deployment, real bot or OpenClaw configuration was created.
+**Status:** Sprint 6 stable-release candidate on `sprint-6-site-integration`.
+The site has one Publisher, a pinned WAAGD Discovery ingress, and a URL-only owner
+Telegram adapter. No production deployment, real bot or OpenClaw configuration was
+created.
 
 ## Requirements and local startup
 
@@ -15,7 +16,7 @@ Node **24.x**, npm **11+**, Git and registry access for dependency installation.
 Cloudflare credentials, a real bot and an AI service are unnecessary for local tests.
 
 ```sh
-cd /Users/mikemmagik/Documents/waagd-media-fixes
+cd /Users/mikemmagik/Documents/weareallgonnadie
 npm ci
 npm run db:init
 cp .dev.vars.example .dev.vars
@@ -84,18 +85,16 @@ on failed assertions. Screenshots and browser session files are ignored by Git.
 
 See [automation](automation/README.md) for environment variables, commands, retry
 state and source configuration. Supply API origin/write token and an absolute private
-state directory outside the repository. Telegram additionally needs a dedicated bot
-token and numeric allowed user IDs. Manual URLs skip editorial classification and
+state directory outside the repository. Telegram uses the existing OpenClaw ingress
+and numeric allowed user IDs; it does not need a bot token in this repository. Owner URLs skip editorial classification and
 publish with available metadata or a neutral hostname title. Confirmed original
 404/410 responses fail before publication. Unsafe
 local/private targets remain rejected.
 
-[OpenClaw setup](automation/openclaw/INSTALL.md) describes the plugin supervising the
-project bot, dedicated editorial agent, existing subscription and native schedules.
-OpenClaw is not installed on this Mac during INT-001; version compatibility and real
-model/bot behavior require manual checks on the installation host. No extra AI
-subscription or independently managed Telegram service is required. Discovery and
-monthly CLI commands invoke the existing agent; Telegram invokes no model.
+[OpenClaw integration](automation/openclaw/INSTALL.md) documents the pure adapter
+boundary for the existing bot ingress. Its actual field mapping and reply path remain
+an operator-owned staging check; no additional bot, poller, model call, or service is
+introduced by this repository.
 
 Monthly runs paginate all visible publications in the selected calendar month using
 `WAAGD_TIMEZONE` (default Asia/Bangkok), excluding deleted posts and other changelogs.

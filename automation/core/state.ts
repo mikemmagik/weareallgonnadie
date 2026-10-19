@@ -10,13 +10,20 @@ import {
 } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join, isAbsolute, parse, resolve } from 'node:path';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import type {
   CreatePostInput,
   CreatePostResult,
 } from '../../shared/contracts.ts';
 import { validateCreatePostInput } from '../../shared/contracts.ts';
-import { record } from './api.ts';
+import {
+  contentHashForPublicationIntent,
+  mapPublicationIntent,
+  publicationSemanticIdentity,
+  validatePublicationIntent,
+} from './intent.ts';
+import type { PublicationIntent } from './intent.ts';
+import { parsePost, record } from './api.ts';
 import type { Api } from './api.ts';
 import { RequestFailure } from './http.ts';
 
@@ -172,18 +179,241 @@ export class State {
 export function payloadKey(payload: CreatePostInput): string {
   return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
+/** Intent IDs are external protocol data and may contain `:`; state names may not. */
+function intentStateKey(intentId: string): string {
+  return createHash('sha256').update(intentId, 'utf8').digest('hex');
+}
+function intentReceiptName(intentId: string): string {
+  return `receipt-${intentStateKey(intentId)}.json`;
+}
 export class Publisher {
   api: Api;
   state: State;
-  constructor(api: Api, state: State) {
+  private readonly discoveryIngressToken: string | null;
+  constructor(
+    api: Api,
+    state: State,
+    options: { discoveryIngressToken?: string } = {},
+  ) {
     this.api = api;
     this.state = state;
+    this.discoveryIngressToken = options.discoveryIngressToken?.trim() || null;
   }
-  async submit(payload: CreatePostInput): Promise<CreatePostResult> {
+  private async publicationPolicy(): Promise<{
+    auto_paused: boolean;
+    telegram_paused: boolean;
+  }> {
+    const saved = await this.state.read('publication-policy.json');
+    // Fail closed: automatic publication needs one explicit operator resume.
+    if (saved === null) return { auto_paused: true, telegram_paused: false };
+    const value = record(saved);
+    if (
+      Object.keys(value).some(
+        (key) => key !== 'auto_paused' && key !== 'telegram_paused',
+      ) ||
+      typeof value.auto_paused !== 'boolean' ||
+      typeof value.telegram_paused !== 'boolean'
+    )
+      throw new StateError('Invalid publication policy state.');
+    return {
+      auto_paused: value.auto_paused,
+      telegram_paused: value.telegram_paused,
+    };
+  }
+  async isPaused(origin: 'auto' | 'telegram'): Promise<boolean> {
+    const policy = await this.publicationPolicy();
+    return origin === 'auto' ? policy.auto_paused : policy.telegram_paused;
+  }
+  async setPaused(origin: 'auto' | 'telegram', paused: boolean): Promise<void> {
+    await this.state.locked('publication-policy', async () => {
+      const policy = await this.publicationPolicy();
+      await this.state.write('publication-policy.json', {
+        ...policy,
+        ...(origin === 'auto'
+          ? { auto_paused: paused }
+          : { telegram_paused: paused }),
+      });
+    });
+  }
+  /** Discovery has a separate ingress token, never the website write token. */
+  async submitDiscoveryIntent(
+    intent: PublicationIntent,
+    ingressToken: string,
+  ): Promise<CreatePostResult> {
+    if (
+      !this.discoveryIngressToken ||
+      ingressToken.length !== this.discoveryIngressToken.length ||
+      !timingSafeEqual(
+        Buffer.from(ingressToken),
+        Buffer.from(this.discoveryIngressToken),
+      )
+    )
+      throw new Error('Untrusted Discovery ingress.');
+    return this.submitTrustedIntent(intent, 'auto');
+  }
+  /** Called only after TelegramSubmissionAdapter has checked a private owner event. */
+  async submitTelegramIntent(
+    intent: PublicationIntent,
+  ): Promise<CreatePostResult> {
+    return this.submitTrustedIntent(intent, 'telegram');
+  }
+  private async submitTrustedIntent(
+    intent: PublicationIntent,
+    expectedOrigin: 'auto' | 'telegram',
+  ): Promise<CreatePostResult> {
+    const checked = validatePublicationIntent(intent);
+    if (!checked.valid) throw new Error('Invalid publication intent.');
+    if (checked.value.origin !== expectedOrigin)
+      throw new Error('Publication ingress origin mismatch.');
+    if (await this.isPaused(checked.value.origin))
+      throw new Error(
+        checked.value.origin === 'auto'
+          ? 'Automatic publication is paused.'
+          : 'Telegram publication is paused.',
+      );
+    const receiptName = intentReceiptName(checked.value.intent_id);
+    const contentHash = contentHashForPublicationIntent({
+      version: checked.value.version,
+      intent_id: checked.value.intent_id,
+      origin: checked.value.origin,
+      authorization: checked.value.authorization,
+      editorial: checked.value.editorial,
+      post: checked.value.post,
+    });
+    const identity = publicationSemanticIdentity(checked.value);
+    return this.state.locked(
+      `intent-${intentStateKey(checked.value.intent_id)}`,
+      async () => {
+        const prior = await this.state.read(receiptName);
+        if (prior !== null) {
+          const saved = record(prior);
+          if (
+            saved.intent_id !== checked.value.intent_id ||
+            saved.origin !== checked.value.origin ||
+            saved.content_hash !== contentHash ||
+            saved.semantic_identity !== identity
+          )
+            throw new StateError(
+              'Publication intent conflict: intent_id was already accepted with different content or identity.',
+            );
+          if (saved.result !== undefined) {
+            const result = record(saved.result);
+            const post = parsePost(result.post);
+            if (result.outcome === 'created')
+              return { outcome: 'created', post };
+            if (
+              result.outcome === 'duplicate' &&
+              (result.matched_by === 'canonical_url' ||
+                result.matched_by === 'source_item_id')
+            )
+              return {
+                outcome: 'duplicate',
+                matched_by: result.matched_by,
+                post,
+              };
+            throw new StateError('Invalid completed publication receipt.');
+          }
+        }
+        const payload = mapPublicationIntent(checked.value);
+        await this.state.write(receiptName, {
+          intent_id: checked.value.intent_id,
+          origin: checked.value.origin,
+          content_hash: contentHash,
+          semantic_identity: identity,
+          status: 'accepted',
+          accepted_at: new Date().toISOString(),
+        });
+        try {
+          const result = await this.submit(payload, {
+            origin: checked.value.origin,
+            intent_id: checked.value.intent_id,
+            content_hash: contentHash,
+            semantic_identity: identity,
+          });
+          await this.state.write(receiptName, {
+            intent_id: checked.value.intent_id,
+            origin: checked.value.origin,
+            content_hash: contentHash,
+            semantic_identity: identity,
+            status: 'published',
+            published_at: new Date().toISOString(),
+            result,
+          });
+          return result;
+        } catch (error) {
+          const queued =
+            (await this.state.read(`outgoing-${payloadKey(payload)}.json`)) !==
+            null;
+          await this.state.write(receiptName, {
+            intent_id: checked.value.intent_id,
+            origin: checked.value.origin,
+            content_hash: contentHash,
+            semantic_identity: identity,
+            status: queued ? 'queued' : 'failed',
+            updated_at: new Date().toISOString(),
+            failure:
+              error instanceof RequestFailure
+                ? `HTTP_${error.status}`
+                : 'UNKNOWN',
+          });
+          throw error;
+        }
+      },
+    );
+  }
+  private async markReplayReceipt(
+    provenance: {
+      origin: 'auto' | 'telegram';
+      intent_id?: string;
+      content_hash?: string;
+      semantic_identity?: string;
+    },
+    result: CreatePostResult,
+  ): Promise<void> {
+    if (
+      !provenance.intent_id ||
+      !provenance.content_hash ||
+      !provenance.semantic_identity
+    )
+      return;
+    const receiptName = intentReceiptName(provenance.intent_id);
+    const receipt = await this.state.read(receiptName);
+    if (receipt === null) return;
+    const saved = record(receipt);
+    if (
+      saved.intent_id !== provenance.intent_id ||
+      saved.origin !== provenance.origin ||
+      saved.content_hash !== provenance.content_hash ||
+      saved.semantic_identity !== provenance.semantic_identity
+    )
+      throw new StateError(
+        'Replay receipt conflict: queued payload does not match its accepted intent.',
+      );
+    await this.state.write(receiptName, {
+      intent_id: provenance.intent_id,
+      origin: provenance.origin,
+      content_hash: provenance.content_hash,
+      semantic_identity: provenance.semantic_identity,
+      status: 'published',
+      published_at: new Date().toISOString(),
+      result,
+    });
+  }
+  async submit(
+    payload: CreatePostInput,
+    provenance: {
+      origin: 'auto' | 'telegram';
+      intent_id?: string;
+      content_hash?: string;
+      semantic_identity?: string;
+    } = { origin: payload.origin },
+  ): Promise<CreatePostResult> {
     return this.state.locked(`outgoing-${payloadKey(payload)}`, async () => {
       const name = `outgoing-${payloadKey(payload)}.json`;
       if (!validateCreatePostInput(payload).valid)
         throw new Error('Invalid payload.');
+      if (payload.origin === 'auto' && (await this.isPaused('auto')))
+        throw new Error('Automatic publication is paused.');
       const prior = await this.state.read(name);
       const saved = prior === null ? {} : record(prior);
       if (
@@ -198,6 +428,7 @@ export class Publisher {
         );
       await this.state.write(name, {
         payload,
+        provenance,
         saved_at: new Date().toISOString(),
         attempts,
       });
@@ -215,6 +446,7 @@ export class Publisher {
         else if (error instanceof RequestFailure)
           await this.state.write(name, {
             payload,
+            provenance,
             saved_at: new Date().toISOString(),
             attempts,
             last_status: error.status,
@@ -253,10 +485,31 @@ export class Publisher {
           continue;
         const payload = validateCreatePostInput(saved.payload);
         if (!payload.valid) throw new Error('Invalid saved payload.');
+        if (payload.value.origin === 'auto' && (await this.isPaused('auto')))
+          continue;
         // Monthly retries recheck current visible references through runChangelog.
         if (payload.value.type === 'changelog') continue;
         attempted++;
-        await this.submit(payload.value);
+        const provenance = record(saved.provenance);
+        const replayProvenance: {
+          origin: 'auto' | 'telegram';
+          intent_id?: string;
+          content_hash?: string;
+          semantic_identity?: string;
+        } = {
+          origin: provenance.origin === 'telegram' ? 'telegram' : 'auto',
+          ...(typeof provenance.intent_id === 'string'
+            ? { intent_id: provenance.intent_id }
+            : {}),
+          ...(typeof provenance.content_hash === 'string'
+            ? { content_hash: provenance.content_hash }
+            : {}),
+          ...(typeof provenance.semantic_identity === 'string'
+            ? { semantic_identity: provenance.semantic_identity }
+            : {}),
+        };
+        const result = await this.submit(payload.value, replayProvenance);
+        await this.markReplayReceipt(replayProvenance, result);
         sent++;
       } catch {
         failed++;

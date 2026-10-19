@@ -11,10 +11,15 @@ async function main() {
   const publisher = new Publisher(
     new Api(config.apiOrigin, config.token),
     new State(config.stateDir),
+    { discoveryIngressToken: config.discoveryIngressToken },
   );
   const ai = new OpenClawAI(config.openclaw, config.agent);
   const command = process.argv[2];
   if (command === 'telegram') {
+    if (!config.legacyTelegramPollerEnabled)
+      throw new Error(
+        'Legacy Telegram polling is disabled. Use the existing OpenClaw delivery integration, or explicitly set WAAGD_ENABLE_LEGACY_TELEGRAM_POLLER=true for a compatibility test with one confirmed polling owner.',
+      );
     const controller = new AbortController();
     process.once('SIGINT', () => controller.abort());
     process.once('SIGTERM', () => controller.abort());
@@ -27,6 +32,10 @@ async function main() {
     return;
   }
   if (command === 'daily') {
+    if (!config.legacyDailyEnabled)
+      throw new Error(
+        'Legacy daily discovery is disabled. WAAGD Discovery is the automatic source; set WAAGD_ENABLE_LEGACY_DAILY=true only for controlled compatibility testing.',
+      );
     console.log(
       JSON.stringify(
         await runDiscovery(
@@ -59,8 +68,20 @@ async function main() {
     );
     return;
   }
+  if (command === 'policy') {
+    const origin = process.argv[3];
+    const action = process.argv[4];
+    if (
+      (origin !== 'auto' && origin !== 'telegram') ||
+      (action !== 'pause' && action !== 'resume')
+    )
+      throw new Error('Usage: policy <auto|telegram> <pause|resume>');
+    await publisher.setPaused(origin, action === 'pause');
+    console.log(JSON.stringify({ origin, paused: action === 'pause' }));
+    return;
+  }
   throw new Error(
-    'Usage: node automation/cli.ts telegram|daily|monthly [YYYY-MM]|retry',
+    'Usage: node automation/cli.ts telegram|daily|monthly [YYYY-MM]|retry|policy <auto|telegram> <pause|resume>',
   );
 }
 main().catch(() => {

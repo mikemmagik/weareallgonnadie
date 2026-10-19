@@ -32,12 +32,16 @@ export function configuration(env: NodeJS.ProcessEnv = process.env) {
   return {
     apiOrigin: required('WAAGD_API_ORIGIN'),
     token: required('WAAGD_API_WRITE_TOKEN'),
+    discoveryIngressToken: env.WAAGD_DISCOVERY_INGRESS_TOKEN?.trim() || '',
     stateDir,
     allowedIds,
     botToken: env.WAAGD_TELEGRAM_BOT_TOKEN ?? '',
     agent: env.WAAGD_OPENCLAW_AGENT ?? 'waagd',
     openclaw: env.WAAGD_OPENCLAW_BIN ?? 'openclaw',
     timezone,
+    legacyDailyEnabled: env.WAAGD_ENABLE_LEGACY_DAILY === 'true',
+    legacyTelegramPollerEnabled:
+      env.WAAGD_ENABLE_LEGACY_TELEGRAM_POLLER === 'true',
   };
 }
 export async function loadSources(path?: string): Promise<Source[]> {

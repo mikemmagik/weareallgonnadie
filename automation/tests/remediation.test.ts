@@ -399,6 +399,7 @@ test('D05: gateway recovery, duplicate replay, retry metadata and accurate Teleg
     ),
     state,
   );
+  await publisher.setPaused('auto', false);
   const update = {
     message: {
       from: { id: 123 },

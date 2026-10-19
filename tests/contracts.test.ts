@@ -21,9 +21,9 @@ const publication: CreatePostInput = {
   references: [],
 };
 
-test('regular publications require an original URL for every origin and type', () => {
+test('video and meme publications require an original URL for every origin', () => {
   for (const origin of ['auto', 'telegram']) {
-    for (const type of ['news', 'video', 'meme']) {
+    for (const type of ['video', 'meme']) {
       assert.equal(
         validateCreatePostInput({ ...publication, origin, type }).valid,
         true,
@@ -35,6 +35,45 @@ test('regular publications require an original URL for every origin and type', (
       );
     }
   }
+});
+
+test('URL-less news is a source-identified text bulletin only', () => {
+  const bulletin = {
+    ...publication,
+    url: null,
+    canonical_url: null,
+    source_item_id: 'bulletin:2026-10-19:outage',
+    preview: null,
+    embed: null,
+    body: 'No public link is available yet.',
+  };
+  assert.equal(validateCreatePostInput(bulletin).valid, true);
+  for (const invalid of [
+    { source_item_id: null },
+    { source_item_id: '  ' },
+    { body: null },
+    { body: '  ' },
+    { canonical_url: 'https://example.com/news' },
+    {
+      preview: {
+        image_url: 'https://example.com/image.jpg',
+        alt_text: null,
+      },
+    },
+    {
+      embed: {
+        kind: 'link',
+        url: 'https://example.com/news',
+        label: null,
+      },
+    },
+    { type: 'video' },
+  ])
+    assert.equal(
+      validateCreatePostInput({ ...bulletin, ...invalid }).valid,
+      false,
+      JSON.stringify(invalid),
+    );
 });
 
 test('changelogs allow no external URL but require their own content', () => {

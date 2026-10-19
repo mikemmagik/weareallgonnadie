@@ -60,7 +60,7 @@ export async function pollTelegram(
             Number(update.update_id) < offset
           )
             continue;
-          const reply = await handleUpdate(update, allowedIds, publisher);
+          const reply = await handleUpdate(update, allowedIds, publisher, http);
           if (reply)
             await telegramCall(
               http,

@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import {
+  copyFile,
+  mkdtemp,
+  mkdir,
+  readFile,
+  writeFile,
+  rm,
+} from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,13 +22,20 @@ import type {
   DeletePostResult,
 } from '../shared/contracts.ts';
 import { Api } from '../automation/core/api.ts';
+import {
+  contentHashForPublicationIntent,
+  withPublicationIntentContentHash,
+} from '../automation/core/intent.ts';
+import type { PublicationIntent } from '../automation/core/intent.ts';
 import { Publisher, State } from '../automation/core/state.ts';
+import { acceptDiscoveryPublicationIntent } from '../automation/discovery/ingress.ts';
 import { handleUpdate } from '../automation/telegram/handler.ts';
 import { runDiscovery } from '../automation/discovery/run.ts';
 import { runChangelog } from '../automation/changelog/run.ts';
 import { encodeCursor } from '../worker/cursor.ts';
 import { SECURITY_HEADERS } from '../worker/security.ts';
 import { prepareUrl } from '../automation/core/metadata.ts';
+import { parsePage } from '../src/lib/feed.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const fixture: CreatePostInput = {
@@ -53,30 +67,31 @@ test(
     const persist = join(directory, 'state');
     const config = join(directory, 'wrangler.json');
     await mkdir(join(directory, 'assets'));
-    await writeFile(
-      config,
-      JSON.stringify({
-        name: 'waagd-backend-local-test',
-        main: join(root, 'worker/index.ts'),
-        compatibility_date: '2026-10-12',
-        workers_dev: false,
-        assets: {
-          directory: join(root, 'dist'),
-          binding: 'ASSETS',
-          run_worker_first: ['/api', '/api/*', '/embed/reddit'],
-        },
-        d1_databases: [
-          {
-            binding: 'DB',
-            database_name: 'waagd-local',
-            database_id: '00000000-0000-0000-0000-000000000000',
-            migrations_dir: join(root, 'db/migrations'),
-            remote: false,
+    const writeConfig = (migrationsDir: string) =>
+      writeFile(
+        config,
+        JSON.stringify({
+          name: 'waagd-backend-local-test',
+          main: join(root, 'worker/index.ts'),
+          compatibility_date: '2026-10-12',
+          workers_dev: false,
+          assets: {
+            directory: join(root, 'dist'),
+            binding: 'ASSETS',
+            run_worker_first: ['/api', '/api/*', '/embed/reddit'],
           },
-        ],
-        vars: { API_WRITE_TOKEN: 'integration-test-only' },
-      }),
-    );
+          d1_databases: [
+            {
+              binding: 'DB',
+              database_name: 'waagd-local',
+              database_id: '00000000-0000-0000-0000-000000000000',
+              migrations_dir: migrationsDir,
+              remote: false,
+            },
+          ],
+          vars: { API_WRITE_TOKEN: 'integration-test-only' },
+        }),
+      );
     const { getPlatformProxy, unstable_dev } = await import('wrangler');
     let proxy:
       | Awaited<ReturnType<typeof getPlatformProxy<{ DB: D1Database }>>>
@@ -100,7 +115,39 @@ test(
           ],
           { cwd: root, encoding: 'utf8', env: { ...process.env, CI: 'true' } },
         );
+      const legacyMigrations = join(directory, 'legacy-migrations');
+      await mkdir(legacyMigrations);
+      await copyFile(
+        join(root, 'db/migrations/0001_posts.sql'),
+        join(legacyMigrations, '0001_posts.sql'),
+      );
+      await writeConfig(legacyMigrations);
       assert.match(migrate(), /0001_posts.sql/);
+      proxy = await getPlatformProxy<{ DB: D1Database }>({
+        configPath: config,
+        persist: { path: join(persist, 'v3') },
+        remoteBindings: false,
+        envFiles: [],
+      });
+      const legacyId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+      const legacyTimestamp = '2026-10-01T00:00:00.000Z';
+      await proxy.env.DB.prepare(
+        `INSERT INTO posts (id, type, url, canonical_url, source_item_id, title, source, origin, preview, embed, body, "references", published_at, deleted_at)
+         VALUES (?, 'news', ?, ?, ?, 'Legacy row', 'Legacy importer', 'auto', NULL, NULL, NULL, '[]', ?, ?)`,
+      )
+        .bind(
+          legacyId,
+          'https://example.com/legacy',
+          'https://example.com/legacy',
+          'legacy-1',
+          legacyTimestamp,
+          legacyTimestamp,
+        )
+        .run();
+      await proxy.dispose();
+      proxy = undefined;
+      await writeConfig(join(root, 'db/migrations'));
+      assert.match(migrate(), /0002_url_less_news.sql/);
       assert.match(migrate(), /No migrations to apply/);
       proxy = await getPlatformProxy<{ DB: D1Database }>({
         configPath: config,
@@ -109,6 +156,33 @@ test(
         envFiles: [],
       });
       const db = proxy.env.DB;
+      assert.deepEqual(
+        await db
+          .prepare(
+            'SELECT id, url, canonical_url, source_item_id, deleted_at FROM posts WHERE id = ?',
+          )
+          .bind(legacyId)
+          .first(),
+        {
+          id: legacyId,
+          url: 'https://example.com/legacy',
+          canonical_url: 'https://example.com/legacy',
+          source_item_id: 'legacy-1',
+          deleted_at: legacyTimestamp,
+        },
+      );
+      await assert.rejects(
+        db
+          .prepare('UPDATE posts SET source_item_id = ? WHERE id = ?')
+          .bind('changed', legacyId)
+          .run(),
+      );
+      await assert.rejects(
+        db
+          .prepare('UPDATE posts SET deleted_at = NULL WHERE id = ?')
+          .bind(legacyId)
+          .run(),
+      );
       server = await unstable_dev(join(root, 'worker/index.ts'), {
         config,
         local: true,
@@ -787,7 +861,7 @@ test(
             await db
               .prepare('SELECT COUNT(*) AS count FROM d1_migrations')
               .first<number>('count'),
-            1,
+            2,
           );
           await assert.rejects(
             db
@@ -850,6 +924,7 @@ test(
             ),
             state,
           );
+          await publisher.setPaused('auto', false);
           await assert.rejects(publisher.submit(fixture));
           assert.equal((await publisher.api.posts().catch(() => [])).length, 0);
           const rows = await db
@@ -1039,7 +1114,7 @@ test(
       );
       await reset();
       await t.test(
-        'URL-less changelogs, all content kinds and provider metadata round-trip',
+        'URL-less changelogs/news, all content kinds and provider metadata round-trip',
         async () => {
           const changelog: CreatePostInput = {
             ...fixture,
@@ -1053,6 +1128,20 @@ test(
           assert.equal(created.status, 201);
           assert.equal(created.data.post.canonical_url, null);
           assert.equal((await create(changelog)).status, 200);
+          const bulletin: CreatePostInput = {
+            ...fixture,
+            type: 'news',
+            url: null,
+            canonical_url: null,
+            source_item_id: 'bulletin:2026-10-19:outage',
+            preview: null,
+            embed: null,
+            body: 'No public link is available yet.',
+          };
+          const bulletinCreated = await create(bulletin);
+          assert.equal(bulletinCreated.status, 201);
+          assert.equal(bulletinCreated.data.post.canonical_url, null);
+          assert.equal((await create(bulletin)).status, 200);
           for (const type of ['video', 'meme'] as const) {
             const input: CreatePostInput = {
               ...fixture,
@@ -1180,27 +1269,86 @@ test(
       );
       await reset();
       await t.test(
-        'automation and mocked Telegram publish against real local Worker/D1',
+        'Sprint 6 intents and owner Telegram reach real local Worker/D1',
         async () => {
           const publisher = new Publisher(
             new Api(base, 'integration-test-only'),
             new State(join(directory, 'automation-state')),
+            { discoveryIngressToken: 'discovery-ingress-test-token' },
+          );
+          const discoveryIntent = withPublicationIntentContentHash({
+            version: 1 as const,
+            intent_id: 'discovery-synthetic-20261019',
+            origin: 'auto' as const,
+            authorization: {
+              kind: 'discovery' as const,
+              approved: true as const,
+            },
+            editorial: {
+              decision_id: 'decision-synthetic-20261019',
+              source_event_id: 'source-event-1',
+              source_attribution: 'Example reporting',
+              approved_at: '2026-10-19T00:00:00.000Z',
+              publication_policy: {
+                version: 'discovery-policy-v1',
+                outcome: 'approved' as const,
+              },
+            },
+            post: {
+              ...fixture,
+              origin: 'auto' as const,
+              url: 'https://example.com/discovery-editorial',
+              source_item_id: 'discovery-editorial-1',
+              title: 'A verified editorial headline',
+              body: 'A full synthetic editorial article with source attribution.',
+              references: [
+                {
+                  url: 'https://example.com/discovery-editorial',
+                  title: 'Verified source',
+                },
+              ],
+            },
+          });
+          await publisher.setPaused('auto', false);
+          const discoveryResult = await publisher.submitDiscoveryIntent(
+            discoveryIntent,
+            'discovery-ingress-test-token',
+          );
+          assert.equal(discoveryResult.outcome, 'created');
+          assert.equal(
+            (await api<Post>(`/${discoveryResult.post.id}`)).data.body,
+            discoveryIntent.post.body,
+          );
+          await publisher.setPaused('auto', true);
+          await assert.rejects(
+            publisher.submitDiscoveryIntent(
+              withPublicationIntentContentHash({
+                ...discoveryIntent,
+                intent_id: 'discovery-paused-20261019',
+              }),
+              'discovery-ingress-test-token',
+            ),
+            /paused/,
           );
           const input = {
             ...fixture,
             url: 'https://example.com/automation',
             source_item_id: 'automation',
           };
+          await publisher.setPaused('auto', false);
           assert.equal((await publisher.submit(input)).outcome, 'created');
           assert.equal((await publisher.submit(input)).outcome, 'duplicate');
           const update = {
+            update_id: 5,
             message: {
+              message_id: 5,
               from: { id: 123, is_bot: false },
               chat: { id: 123, type: 'private' },
-              text: 'https://example.com/manual?utm_source=telegram',
+              text: 'https://example.com/owner-submission',
             },
           };
-          const metadata = async () => new Response('', { status: 403 });
+          const metadata = async () =>
+            new Response('', { headers: { 'content-type': 'text/html' } });
           const reply = await handleUpdate(
             update,
             new Set(['123']),
@@ -1212,12 +1360,20 @@ test(
           const publication = (await api<Post>(`/${id}`)).data;
           assert.equal(publication.origin, 'telegram');
           assert.equal(publication.title, 'example.com');
-          assert.equal(publication.canonical_url, 'https://example.com/manual');
-          assert.match(
-            (await handleUpdate(update, new Set(['123']), publisher, metadata))!
-              .text,
-            /^ALREADY EXISTS/,
+          assert.equal(publication.url, 'https://example.com/owner-submission');
+          assert.equal(publication.body, null);
+          assert.equal(
+            publication.canonical_url,
+            'https://example.com/owner-submission',
           );
+          const redelivery = await handleUpdate(
+            update,
+            new Set(['123']),
+            publisher,
+            metadata,
+          );
+          assert.match(redelivery!.text, /^PUBLISHED/);
+          assert.match(redelivery!.text, new RegExp(id));
           const denied = await api(`/${id}`, { method: 'DELETE' });
           assert.equal(denied.status, 401);
           const deletion = await handleUpdate(
@@ -1230,13 +1386,6 @@ test(
           );
           assert.match(deletion!.text, /^DELETED/);
           assert.equal((await api(`/${id}`)).status, 404);
-          const tombstone = await handleUpdate(
-            update,
-            new Set(['123']),
-            publisher,
-            metadata,
-          );
-          assert.match(tombstone!.text, /remains deleted/);
           const discovery = await runDiscovery(
             publisher,
             { run: async () => ({ selected: [] }) },
@@ -1263,9 +1412,17 @@ test(
                 const ids = (data as { posts: { id: string }[] }).posts.map(
                   (p) => p.id,
                 );
-                assert.deepEqual(ids, [(await publisher.api.posts())[0]!.id]);
+                assert.deepEqual(
+                  ids,
+                  (await publisher.api.posts()).map((post) => post.id),
+                );
                 return {
-                  body: `[ADDED] [post:${ids[0]}] ${'Supported satire '.repeat(80)}`,
+                  body: ids
+                    .map(
+                      (id) =>
+                        `[ADDED] [post:${id}] ${'Supported satire '.repeat(38)}`,
+                    )
+                    .join('\n'),
                   publication_ids: ids,
                 };
               },
@@ -1291,6 +1448,78 @@ test(
           const home = await fetch(base);
           assert.equal(home.status, 200);
           assert.match(await home.text(), /Incoming transmissions/);
+        },
+      );
+      await reset();
+      await t.test(
+        'actual final Discovery f1c7766 producer enters the core ingress once and reaches Worker/D1 and frontend parser',
+        { skip: !process.env.WAAGD_DISCOVERY_ROOT },
+        async () => {
+          const discoveryRoot = process.env.WAAGD_DISCOVERY_ROOT!;
+          const python = process.env.WAAGD_DISCOVERY_PYTHON ?? 'python';
+          const output = join(directory, 'publication-intent.json');
+          execFileSync(
+            python,
+            ['scripts/sprint6-publication-fixture.py', '--output', output],
+            {
+              cwd: discoveryRoot,
+              encoding: 'utf8',
+              env: { ...process.env, UV_NO_SYNC: '0' },
+            },
+          );
+          const exported = JSON.parse(
+            await readFile(output, 'utf8'),
+          ) as unknown;
+          let publicationPosts = 0;
+          const publisher = new Publisher(
+            new Api(base, 'integration-test-only', async (url, init) => {
+              if (init?.method === 'POST') publicationPosts++;
+              return fetch(url, init);
+            }),
+            new State(join(directory, 'discovery-f1c7766-state')),
+            { discoveryIngressToken: 'discovery-ingress-test-token' },
+          );
+          await publisher.setPaused('auto', false);
+          const result = await acceptDiscoveryPublicationIntent(
+            publisher,
+            exported,
+            'discovery-ingress-test-token',
+          );
+          assert.equal(result.outcome, 'created');
+          assert.equal(publicationPosts, 1);
+          const page = await api<PostsPage>('');
+          const frontendPosts = parsePage({ ok: true, data: page.data }).posts;
+          assert.equal(frontendPosts.length, 1);
+          assert.equal(frontendPosts[0]!.id, result.post.id);
+          assert.equal(frontendPosts[0]!.origin, 'auto');
+          assert.match(frontendPosts[0]!.body ?? '', /verified/);
+          const replay = await acceptDiscoveryPublicationIntent(
+            publisher,
+            exported,
+            'discovery-ingress-test-token',
+          );
+          assert.equal(replay.post.id, result.post.id);
+          assert.equal(publicationPosts, 1);
+          const changed = structuredClone(exported) as PublicationIntent;
+          changed.post.body =
+            'A changed body under the original intent identity.';
+          const { content_hash: previousHash, ...unsignedChanged } = changed;
+          assert.notEqual(
+            previousHash,
+            contentHashForPublicationIntent(unsignedChanged),
+          );
+          changed.content_hash =
+            contentHashForPublicationIntent(unsignedChanged);
+          await assert.rejects(
+            acceptDiscoveryPublicationIntent(
+              publisher,
+              changed,
+              'discovery-ingress-test-token',
+            ),
+            /conflict/i,
+          );
+          assert.equal(publicationPosts, 1);
+          assert.equal((await api<PostsPage>('')).data.posts.length, 1);
         },
       );
       await reset();

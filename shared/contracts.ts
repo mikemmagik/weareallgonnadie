@@ -46,6 +46,16 @@ interface PostContent {
 export type CreatePostInput = PostContent &
   (
     | { type: Exclude<PostType, 'changelog'>; url: string }
+    | {
+        /** A source-identified text bulletin may arrive before it has a public URL. */
+        type: 'news';
+        url: null;
+        canonical_url: null;
+        source_item_id: string;
+        preview: null;
+        embed: null;
+        body: string;
+      }
     | { type: 'changelog'; url: string | null; body: string }
   );
 export type Post = CreatePostInput & {
@@ -234,7 +244,8 @@ export function validateCreatePostInput(
     issue('type', 'Unsupported post type.');
   if (!POST_ORIGINS.includes(input.origin as PostOrigin))
     issue('origin', 'Unsupported origin.');
-  url(input.url, 'url', input.type === 'changelog');
+  const urlLessNews = input.type === 'news' && input.url === null;
+  url(input.url, 'url', input.type === 'changelog' || urlLessNews);
   url(input.canonical_url, 'canonical_url', true);
   if (input.url === null && input.canonical_url !== null)
     issue('canonical_url', 'Must be null when url is null.');
@@ -246,7 +257,20 @@ export function validateCreatePostInput(
     CONTENT_LIMITS.source_item_id,
     true,
   );
-  text(input.body, 'body', CONTENT_LIMITS.body, input.type !== 'changelog');
+  text(
+    input.body,
+    'body',
+    CONTENT_LIMITS.body,
+    input.type !== 'changelog' && !urlLessNews,
+  );
+  if (urlLessNews) {
+    if (input.source_item_id === null)
+      issue('source_item_id', 'Required when a news URL is unavailable.');
+    if (input.preview !== null)
+      issue('preview', 'Must be null when a news URL is unavailable.');
+    if (input.embed !== null)
+      issue('embed', 'Must be null when a news URL is unavailable.');
+  }
   if (input.preview !== null) {
     if (!isRecord(input.preview))
       issue('preview', 'Expected preview metadata or null.');

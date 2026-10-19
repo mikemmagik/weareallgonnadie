@@ -2,6 +2,7 @@ import type { Post } from '../../shared/contracts.ts';
 import { queueExternalMedia } from './external-content.ts';
 import { redditPost } from '../../shared/media.ts';
 import {
+  articleBlocks,
   changelogBlocks,
   playerFor,
   previewFor,
@@ -308,6 +309,11 @@ export function renderPost(post: Post, index: number): HTMLElement {
       );
     }
     content.append(log);
+  } else if (post.type === 'news' && post.body?.trim()) {
+    const body = element('div', 'article-body');
+    for (const block of articleBlocks(post.body))
+      body.append(element('p', 'article-paragraph', block));
+    content.append(body);
   } else if (post.body?.trim())
     content.append(element('p', 'post-preview', post.body));
   const source = element('div', 'post-source');
