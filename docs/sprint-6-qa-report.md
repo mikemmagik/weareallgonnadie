@@ -5,10 +5,16 @@ Date: 19 October 2026 (Asia/Bangkok). Candidate: local branch
 
 ## Result
 
-**Local release candidate accepted.** `npm run validate` completed successfully after
-the Sprint 6 changes: TypeScript/Astro checks, linting, Prettier, 93 unit/contract/
-automation tests, credential-free static + Worker dry-run build smoke, and 41 local
-Worker/D1 integration entries all passed. No deployment was performed.
+**Finalization RC passed local verification.** `npm run validate` completed on this
+branch: typecheck, lint, formatting, 95 unit/contract/automation/security tests,
+credential-free static + Worker dry-run smoke, and 41 real local Worker/D1 entries.
+No deployment was performed. The current contract, security review, updated
+kill-switch/replay tests and combined staging procedure are recorded in
+[`sprint-6-publication-intent-v1.md`](sprint-6-publication-intent-v1.md),
+[`sprint-6-security-review.md`](sprint-6-security-review.md), and
+[`sprint-6-staging-acceptance.md`](sprint-6-staging-acceptance.md). The new branch
+workflow runs `npm run validate` plus the independent local regression acceptance on
+push/PR, covering regression, security and Worker/D1 E2E without credentials.
 
 The deterministic integration entry named `Sprint 6 intents and owner Telegram reach
 real local Worker/D1` exercises both required write paths against the actual local

@@ -22,6 +22,12 @@ commands remain available. The Site Publisher state directory stores receipts an
 retriable requests outside this repository, with the existing ownership and permission
 checks.
 
+Auto publication starts paused on a fresh state directory. It requires an explicit
+owner `/resume auto` or a host-local `policy auto resume`; `policy auto pause` is the
+non-Telegram emergency control. Discovery must use the separate ingress secret, not
+the Worker write token. The complete v1 schema and hash rules are in
+[`sprint-6-publication-intent-v1.md`](sprint-6-publication-intent-v1.md).
+
 ## Existing-bot boundary
 
 Do not run `automation/cli.ts telegram`, enable the legacy poller service, register a
@@ -66,6 +72,10 @@ legacy compatibility opt-in. Do not schedule it while WAAGD Discovery is connect
 After staging acceptance of the new intent path, remove the legacy discovery collector
 in a separately reviewed change while retaining generic API, retry, deduplication, and
 state modules.
+
+For a combined remote run and rollback sequence, use
+[`sprint-6-staging-acceptance.md`](sprint-6-staging-acceptance.md). It is a prepared
+runbook, not evidence that staging or the existing bot has been connected.
 
 An accepted auto intent maps to the existing post API as follows:
 

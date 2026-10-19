@@ -11,6 +11,7 @@ async function main() {
   const publisher = new Publisher(
     new Api(config.apiOrigin, config.token),
     new State(config.stateDir),
+    { discoveryIngressToken: config.discoveryIngressToken },
   );
   const ai = new OpenClawAI(config.openclaw, config.agent);
   const command = process.argv[2];
@@ -67,8 +68,20 @@ async function main() {
     );
     return;
   }
+  if (command === 'policy') {
+    const origin = process.argv[3];
+    const action = process.argv[4];
+    if (
+      (origin !== 'auto' && origin !== 'telegram') ||
+      (action !== 'pause' && action !== 'resume')
+    )
+      throw new Error('Usage: policy <auto|telegram> <pause|resume>');
+    await publisher.setPaused(origin, action === 'pause');
+    console.log(JSON.stringify({ origin, paused: action === 'pause' }));
+    return;
+  }
   throw new Error(
-    'Usage: node automation/cli.ts telegram|daily|monthly [YYYY-MM]|retry',
+    'Usage: node automation/cli.ts telegram|daily|monthly [YYYY-MM]|retry|policy <auto|telegram> <pause|resume>',
   );
 }
 main().catch(() => {

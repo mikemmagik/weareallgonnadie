@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { record, UUID } from '../core/api.ts';
 import type { Http } from '../core/http.ts';
 import { RequestFailure, UnsafeUrlError } from '../core/http.ts';
+import { withPublicationIntentContentHash } from '../core/intent.ts';
 import type { PublicationIntent } from '../core/intent.ts';
 import { prepareUrl } from '../core/metadata.ts';
 import type { Publisher } from '../core/state.ts';
@@ -18,6 +19,21 @@ export interface TelegramAdapterOptions {
   publisher: Publisher;
   http?: Http;
   prepare?: (input: string, http?: Http) => ReturnType<typeof prepareUrl>;
+}
+
+/**
+ * Minimal projection of OpenClaw's documented `before_dispatch` message facts.
+ * The OpenClaw ingress, not this adapter, must set `direct` from its admitted
+ * channel context. This stays deliberately separate from raw Bot API updates.
+ */
+export interface OpenClawTelegramInbound {
+  channel: 'telegram';
+  direct: boolean;
+  senderId: string | number;
+  messageId: string | number;
+  providerUpdate: string | number;
+  content: string;
+  media?: readonly unknown[];
 }
 
 interface OwnerMessage {
@@ -124,7 +140,7 @@ function helpText(): string {
 
 function publicationReply(
   publisher: Publisher,
-  result: Awaited<ReturnType<Publisher['submitIntent']>>,
+  result: Awaited<ReturnType<Publisher['submitTelegramIntent']>>,
 ): string {
   return [
     result.outcome === 'created' ? 'PUBLISHED' : 'ALREADY EXISTS',
@@ -196,7 +212,7 @@ export class TelegramSubmissionAdapter {
         post.source_item_id = sourceItemId;
       }
     }
-    return {
+    return withPublicationIntentContentHash({
       version: 1,
       intent_id: intentId(message),
       origin: 'telegram',
@@ -205,8 +221,9 @@ export class TelegramSubmissionAdapter {
         approved: true,
         owner_key: message.ownerKey,
       },
+      editorial: null,
       post,
-    };
+    });
   }
 
   private async saveDraft(
@@ -246,10 +263,7 @@ export class TelegramSubmissionAdapter {
     intent: PublicationIntent,
   ): Promise<Reply> {
     const result = message.stableIdentity
-      ? await this.publisher.submitIntent(
-          intent,
-          this.publisher.authority('telegram'),
-        )
+      ? await this.publisher.submitTelegramIntent(intent)
       : await this.publisher.submit(intent.post);
     await this.publisher.state.remove(this.draftName(message));
     await this.publisher.state.write(this.statusName(message), {
@@ -383,4 +397,52 @@ export async function handleUpdate(
     publisher,
     ...(http ? { http } : {}),
   }).handle(update);
+}
+
+/**
+ * Bridge the existing OpenClaw Telegram channel into the same deterministic
+ * adapter. Call this from an operator-reviewed `before_dispatch` hook only;
+ * it never polls Telegram and never receives a bot token or file URL.
+ */
+export async function handleOpenClawTelegramInbound(
+  event: OpenClawTelegramInbound,
+  allowedIds: ReadonlySet<string>,
+  publisher: Publisher,
+  http?: Http,
+): Promise<Reply | null> {
+  const numeric = (value: string | number): number | null => {
+    const parsed =
+      typeof value === 'number'
+        ? value
+        : /^\d+$/.test(value)
+          ? Number(value)
+          : Number.NaN;
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+  };
+  const sender = numeric(event.senderId);
+  const messageId = numeric(event.messageId);
+  const updateId = numeric(event.providerUpdate);
+  if (
+    event.channel !== 'telegram' ||
+    !event.direct ||
+    sender === null ||
+    messageId === null ||
+    updateId === null
+  )
+    return null;
+  return handleUpdate(
+    {
+      update_id: updateId,
+      message: {
+        message_id: messageId,
+        from: { id: sender, is_bot: false },
+        chat: { id: sender, type: 'private' },
+        text: event.content,
+        ...(event.media?.length ? { document: { attached: true } } : {}),
+      },
+    },
+    allowedIds,
+    publisher,
+    http,
+  );
 }

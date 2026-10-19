@@ -1,0 +1,36 @@
+name: Sprint 6 site integration
+
+on:
+  push:
+    branches: [sprint-6-site-integration]
+  pull_request:
+    branches: [sprint-6-site-integration]
+
+permissions:
+  contents: read
+
+jobs:
+  regression-security-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      ASTRO_TELEMETRY_DISABLED: '1'
+      WRANGLER_SEND_METRICS: 'false'
+      CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: 'false'
+    steps:
+      - name: Check out revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Use Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Contract, security, and local Worker/D1 E2E
+        run: npm run validate
+      - name: Independent regression acceptance
+        run: node --test tests/regression-001.mjs

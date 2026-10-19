@@ -15,6 +15,7 @@ import type {
   DeletePostResult,
 } from '../shared/contracts.ts';
 import { Api } from '../automation/core/api.ts';
+import { withPublicationIntentContentHash } from '../automation/core/intent.ts';
 import { Publisher, State } from '../automation/core/state.ts';
 import { handleUpdate } from '../automation/telegram/handler.ts';
 import { runDiscovery } from '../automation/discovery/run.ts';
@@ -910,6 +911,7 @@ test(
             ),
             state,
           );
+          await publisher.setPaused('auto', false);
           await assert.rejects(publisher.submit(fixture));
           assert.equal((await publisher.api.posts().catch(() => [])).length, 0);
           const rows = await db
@@ -1259,14 +1261,25 @@ test(
           const publisher = new Publisher(
             new Api(base, 'integration-test-only'),
             new State(join(directory, 'automation-state')),
+            { discoveryIngressToken: 'discovery-ingress-test-token' },
           );
-          const discoveryIntent = {
+          const discoveryIntent = withPublicationIntentContentHash({
             version: 1 as const,
             intent_id: 'discovery-synthetic-20261019',
             origin: 'auto' as const,
             authorization: {
               kind: 'discovery' as const,
               approved: true as const,
+            },
+            editorial: {
+              decision_id: 'decision-synthetic-20261019',
+              source_event_id: 'source-event-1',
+              source_attribution: 'Example reporting',
+              approved_at: '2026-10-19T00:00:00.000Z',
+              publication_policy: {
+                version: 'discovery-policy-v1',
+                outcome: 'approved' as const,
+              },
             },
             post: {
               ...fixture,
@@ -1282,10 +1295,11 @@ test(
                 },
               ],
             },
-          };
-          const discoveryResult = await publisher.submitIntent(
+          });
+          await publisher.setPaused('auto', false);
+          const discoveryResult = await publisher.submitDiscoveryIntent(
             discoveryIntent,
-            publisher.authority('auto'),
+            'discovery-ingress-test-token',
           );
           assert.equal(discoveryResult.outcome, 'created');
           assert.equal(
@@ -1294,9 +1308,12 @@ test(
           );
           await publisher.setPaused('auto', true);
           await assert.rejects(
-            publisher.submitIntent(
-              { ...discoveryIntent, intent_id: 'discovery-paused-20261019' },
-              publisher.authority('auto'),
+            publisher.submitDiscoveryIntent(
+              withPublicationIntentContentHash({
+                ...discoveryIntent,
+                intent_id: 'discovery-paused-20261019',
+              }),
+              'discovery-ingress-test-token',
             ),
             /paused/,
           );
@@ -1305,6 +1322,7 @@ test(
             url: 'https://example.com/automation',
             source_item_id: 'automation',
           };
+          await publisher.setPaused('auto', false);
           assert.equal((await publisher.submit(input)).outcome, 'created');
           assert.equal((await publisher.submit(input)).outcome, 'duplicate');
           const update = {

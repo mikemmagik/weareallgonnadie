@@ -4,18 +4,35 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Api } from '../core/api.ts';
+import {
+  validatePublicationIntent,
+  withPublicationIntentContentHash,
+} from '../core/intent.ts';
 import type { PublicationIntent } from '../core/intent.ts';
-import { Publisher, State } from '../core/state.ts';
-import { handleUpdate } from '../telegram/handler.ts';
+import { Publisher, State, StateError } from '../core/state.ts';
+import {
+  handleOpenClawTelegramInbound,
+  handleUpdate,
+} from '../telegram/handler.ts';
 
 const postId = '5bdac05a-6f04-4bb9-a7d7-c08530c4fb12';
 
 function intent(): PublicationIntent {
-  return {
+  return withPublicationIntentContentHash({
     version: 1,
     intent_id: 'discovery-12345678',
     origin: 'auto',
     authorization: { kind: 'discovery', approved: true },
+    editorial: {
+      decision_id: 'decision-123',
+      source_event_id: 'event-123',
+      source_attribution: 'Example reporting',
+      approved_at: '2026-10-19T00:00:00.000Z',
+      publication_policy: {
+        version: 'discovery-policy-v1',
+        outcome: 'approved',
+      },
+    },
     post: {
       type: 'news',
       url: 'https://example.com/story',
@@ -29,10 +46,10 @@ function intent(): PublicationIntent {
       body: 'A complete editorial article.',
       references: [{ url: 'https://example.com/story', title: 'Example' }],
     },
-  };
+  });
 }
 
-test('PublicationIntent requires an in-memory authority and retains a durable receipt', async (t) => {
+test('PublicationIntent requires authenticated Discovery ingress and retains a durable receipt', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'waagd-intent-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   let calls = 0;
@@ -54,23 +71,107 @@ test('PublicationIntent requires an in-memory authority and retains a durable re
       });
     }),
     new State(dir),
+    { discoveryIngressToken: 'discovery-ingress-test-token' },
   );
   await assert.rejects(
-    publisher.submitIntent(intent(), { origin: 'auto' } as never),
-    /Untrusted publication authority/,
+    publisher.submitDiscoveryIntent(intent(), 'wrong-token'),
+    /Untrusted Discovery ingress/,
   );
+  await publisher.setPaused('auto', false);
   assert.equal(
-    (await publisher.submitIntent(intent(), publisher.authority('auto')))
-      .outcome,
+    (
+      await publisher.submitDiscoveryIntent(
+        intent(),
+        'discovery-ingress-test-token',
+      )
+    ).outcome,
     'created',
   );
   assert.equal(
-    (await publisher.submitIntent(intent(), publisher.authority('auto')))
-      .outcome,
+    (
+      await publisher.submitDiscoveryIntent(
+        intent(),
+        'discovery-ingress-test-token',
+      )
+    ).outcome,
     'created',
   );
   assert.equal(calls, 1);
   assert.ok(await publisher.state.read('receipt-discovery-12345678.json'));
+
+  const changed = withPublicationIntentContentHash({
+    ...intent(),
+    post: { ...intent().post, body: 'A different complete editorial article.' },
+  });
+  await assert.rejects(
+    publisher.submitDiscoveryIntent(changed, 'discovery-ingress-test-token'),
+    StateError,
+  );
+});
+
+test('automatic intents fail closed, reject article type, and replay only after resume', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'waagd-kill-switch-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  let online = false;
+  let calls = 0;
+  const publisher = new Publisher(
+    new Api(
+      'https://site.example',
+      'test-token',
+      async (_url, init) => {
+        calls++;
+        if (!online) return new Response('', { status: 503 });
+        const input = JSON.parse(String(init?.body));
+        return Response.json({
+          ok: true,
+          data: {
+            outcome: 'created',
+            post: {
+              ...input,
+              id: postId,
+              published_at: '2026-10-19T00:00:00.000Z',
+              deleted_at: null,
+            },
+          },
+        });
+      },
+      async () => {},
+    ),
+    new State(dir),
+    { discoveryIngressToken: 'discovery-ingress-test-token' },
+  );
+  assert.equal(await publisher.isPaused('auto'), true);
+  await assert.rejects(
+    publisher.submitDiscoveryIntent(intent(), 'discovery-ingress-test-token'),
+    /paused/,
+  );
+  assert.equal(calls, 0);
+
+  const article = withPublicationIntentContentHash({
+    ...intent(),
+    post: { ...intent().post, type: 'article' as never },
+  });
+  assert.equal(validatePublicationIntent(article).valid, false);
+
+  await publisher.setPaused('auto', false);
+  await assert.rejects(
+    publisher.submitDiscoveryIntent(intent(), 'discovery-ingress-test-token'),
+  );
+  assert.equal(calls, 3);
+  await publisher.setPaused('auto', true);
+  assert.deepEqual(await publisher.replay(), { sent: 0, failed: 0 });
+  assert.equal(calls, 3);
+
+  online = true;
+  await publisher.setPaused('auto', false);
+  assert.deepEqual(await publisher.replay(), { sent: 1, failed: 0 });
+  assert.equal(calls, 4);
+  assert.match(
+    JSON.stringify(
+      await publisher.state.read('receipt-discovery-12345678.json'),
+    ),
+    /"status":"published"/,
+  );
 });
 
 test('Telegram text is URL-less news and remains available while auto is paused', async (t) => {
@@ -132,4 +233,57 @@ test('Telegram text is URL-less news and remains available while auto is paused'
     body: 'A short bulletin',
     references: [],
   });
+});
+
+test('OpenClaw ingress projection accepts only direct numeric Telegram owner events', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'waagd-openclaw-inbound-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const publisher = new Publisher(
+    new Api('https://site.example', 'test-token', async (_url, init) => {
+      const input = JSON.parse(String(init?.body));
+      return Response.json({
+        ok: true,
+        data: {
+          outcome: 'created',
+          post: {
+            ...input,
+            id: postId,
+            published_at: '2026-10-19T00:00:00.000Z',
+            deleted_at: null,
+          },
+        },
+      });
+    }),
+    new State(dir),
+  );
+  assert.equal(
+    await handleOpenClawTelegramInbound(
+      {
+        channel: 'telegram',
+        direct: false,
+        senderId: 123,
+        messageId: 1,
+        providerUpdate: 1,
+        content: 'not direct',
+      },
+      new Set(['123']),
+      publisher,
+    ),
+    null,
+  );
+  assert.match(
+    (await handleOpenClawTelegramInbound(
+      {
+        channel: 'telegram',
+        direct: true,
+        senderId: '123',
+        messageId: '2',
+        providerUpdate: '2',
+        content: 'Owner message through OpenClaw',
+      },
+      new Set(['123']),
+      publisher,
+    ))!.text,
+    /^PUBLISHED/,
+  );
 });

@@ -68,10 +68,14 @@ const update = (text: string, senderId = 123) => ({
 async function fixture(t: TestContext, http: Http) {
   const dir = await mkdtemp(join(tmpdir(), 'waagd-test-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  return new Publisher(
+  const publisher = new Publisher(
     new Api('https://site.example', 'mock-token', http, noSleep),
     new State(dir),
   );
+  // Legacy fixtures exercise the raw retry primitive; operator enablement is
+  // explicit in production and separately tested below.
+  await publisher.setPaused('auto', false);
+  return publisher;
 }
 function backend(posts: Post[] = [], outcome = 'created'): Http {
   return async (_url, init) => {
@@ -422,7 +426,12 @@ test('permanent publication errors leave no retry payload', async (t) => {
     async () => new Response('', { status: 501 }),
   );
   await assert.rejects(publisher.submit(payload()));
-  assert.equal((await readdir(publisher.state.dir)).length, 0);
+  assert.equal(
+    (await readdir(publisher.state.dir)).filter((name) =>
+      name.startsWith('outgoing-'),
+    ).length,
+    0,
+  );
 });
 test('API validates envelopes, paginates opaque cursors and excludes deleted posts', async () => {
   let calls = 0;
