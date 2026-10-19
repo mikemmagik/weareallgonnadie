@@ -32,21 +32,18 @@ jobs:
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.13'
-      - name: Check out Discovery producer at the acceptance commit
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: mikemmagik/waagd-discovery
-          ref: 7ac6bcb8aa5b271ae9051b09a2e2dfb2de291c64
-          path: waagd-discovery
-          persist-credentials: false
+      - name: Check out Discovery producer outside the site workspace
+        run: |
+          git clone --no-checkout https://github.com/mikemmagik/waagd-discovery.git "$RUNNER_TEMP/waagd-discovery"
+          git -C "$RUNNER_TEMP/waagd-discovery" checkout --detach 7ac6bcb8aa5b271ae9051b09a2e2dfb2de291c64
       - name: Install the pinned Discovery producer
-        working-directory: waagd-discovery
+        working-directory: ${{ runner.temp }}/waagd-discovery
         run: python -m pip install --disable-pip-version-check .
       - name: Install locked dependencies
         run: npm ci
       - name: Contract, security, and local Worker/D1 E2E
         env:
-          WAAGD_DISCOVERY_ROOT: ${{ github.workspace }}/waagd-discovery
+          WAAGD_DISCOVERY_ROOT: ${{ runner.temp }}/waagd-discovery
           WAAGD_DISCOVERY_PYTHON: python
         run: npm run validate
       - name: Independent regression acceptance
