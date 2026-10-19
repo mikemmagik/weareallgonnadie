@@ -2,9 +2,9 @@ name: Sprint 6 site integration
 
 on:
   push:
-    branches: [sprint-6-site-integration]
+    branches: [main, sprint-6-site-integration]
   pull_request:
-    branches: [sprint-6-site-integration]
+    branches: [main, sprint-6-site-integration]
 
 permissions:
   contents: read
