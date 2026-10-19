@@ -22,9 +22,13 @@ import type {
   DeletePostResult,
 } from '../shared/contracts.ts';
 import { Api } from '../automation/core/api.ts';
-import { withPublicationIntentContentHash } from '../automation/core/intent.ts';
+import {
+  contentHashForPublicationIntent,
+  withPublicationIntentContentHash,
+} from '../automation/core/intent.ts';
+import type { PublicationIntent } from '../automation/core/intent.ts';
 import { Publisher, State } from '../automation/core/state.ts';
-import { acceptDiscoveryPublicationExportV1 } from '../automation/discovery/importer.ts';
+import { acceptDiscoveryPublicationIntent } from '../automation/discovery/ingress.ts';
 import { handleUpdate } from '../automation/telegram/handler.ts';
 import { runDiscovery } from '../automation/discovery/run.ts';
 import { runChangelog } from '../automation/changelog/run.ts';
@@ -1450,12 +1454,12 @@ test(
       );
       await reset();
       await t.test(
-        'actual Discovery 7ac6bcb producer imports through the sole Publisher into Worker/D1 and frontend wire parser',
+        'actual Discovery 9b2d95a producer enters the core ingress once and reaches Worker/D1 and frontend parser',
         { skip: !process.env.WAAGD_DISCOVERY_ROOT },
         async () => {
           const discoveryRoot = process.env.WAAGD_DISCOVERY_ROOT!;
           const python = process.env.WAAGD_DISCOVERY_PYTHON ?? 'python';
-          const output = join(directory, 'discovery-7ac6bcb-export.json');
+          const output = join(directory, 'publication-intent.json');
           execFileSync(
             python,
             ['scripts/sprint6-publication-fixture.py', '--output', output],
@@ -1468,31 +1472,55 @@ test(
           const exported = JSON.parse(
             await readFile(output, 'utf8'),
           ) as unknown;
+          let publicationPosts = 0;
           const publisher = new Publisher(
-            new Api(base, 'integration-test-only'),
-            new State(join(directory, 'discovery-7ac6bcb-state')),
+            new Api(base, 'integration-test-only', async (url, init) => {
+              if (init?.method === 'POST') publicationPosts++;
+              return fetch(url, init);
+            }),
+            new State(join(directory, 'discovery-9b2d95a-state')),
             { discoveryIngressToken: 'discovery-ingress-test-token' },
           );
           await publisher.setPaused('auto', false);
-          const results = await acceptDiscoveryPublicationExportV1(
+          const result = await acceptDiscoveryPublicationIntent(
             publisher,
             exported,
             'discovery-ingress-test-token',
           );
-          assert.equal(results.length, 1);
-          assert.equal(results[0]!.outcome, 'created');
+          assert.equal(result.outcome, 'created');
+          assert.equal(publicationPosts, 1);
           const page = await api<PostsPage>('');
           const frontendPosts = parsePage({ ok: true, data: page.data }).posts;
           assert.equal(frontendPosts.length, 1);
-          assert.equal(frontendPosts[0]!.id, results[0]!.post.id);
+          assert.equal(frontendPosts[0]!.id, result.post.id);
           assert.equal(frontendPosts[0]!.origin, 'auto');
           assert.match(frontendPosts[0]!.body ?? '', /verified/);
-          const replay = await acceptDiscoveryPublicationExportV1(
+          const replay = await acceptDiscoveryPublicationIntent(
             publisher,
             exported,
             'discovery-ingress-test-token',
           );
-          assert.equal(replay[0]!.post.id, results[0]!.post.id);
+          assert.equal(replay.post.id, result.post.id);
+          assert.equal(publicationPosts, 1);
+          const changed = structuredClone(exported) as PublicationIntent;
+          changed.post.body =
+            'A changed body under the original intent identity.';
+          const { content_hash: previousHash, ...unsignedChanged } = changed;
+          assert.notEqual(
+            previousHash,
+            contentHashForPublicationIntent(unsignedChanged),
+          );
+          changed.content_hash =
+            contentHashForPublicationIntent(unsignedChanged);
+          await assert.rejects(
+            acceptDiscoveryPublicationIntent(
+              publisher,
+              changed,
+              'discovery-ingress-test-token',
+            ),
+            /conflict/i,
+          );
+          assert.equal(publicationPosts, 1);
           assert.equal((await api<PostsPage>('')).data.posts.length, 1);
         },
       );

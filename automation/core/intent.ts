@@ -115,11 +115,73 @@ export function canonicalPublicationJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
-/** SHA-256 of canonical CreatePostInput only; Python producer uses the same rule. */
+/**
+ * Exact v1 document used by the Discovery Python producer for `content_hash`.
+ *
+ * The insertion order is part of the cross-language wire contract: Python uses
+ * compact `json.dumps(..., ensure_ascii=False, allow_nan=False)` over this
+ * document and TypeScript uses `JSON.stringify` over the same field order.
+ * Incoming JSON key order is deliberately irrelevant because we rebuild it.
+ */
+function publicationIntentHashDocument(
+  intent: Omit<PublicationIntent, 'content_hash'>,
+): Record<string, unknown> {
+  const post = intent.post;
+  return {
+    version: intent.version,
+    intent_id: intent.intent_id,
+    origin: intent.origin,
+    authorization:
+      intent.authorization.kind === 'telegram-owner'
+        ? {
+            kind: intent.authorization.kind,
+            approved: intent.authorization.approved,
+            owner_key: intent.authorization.owner_key,
+          }
+        : {
+            kind: intent.authorization.kind,
+            approved: intent.authorization.approved,
+          },
+    editorial:
+      intent.editorial === null
+        ? null
+        : {
+            decision_id: intent.editorial.decision_id,
+            source_event_id: intent.editorial.source_event_id,
+            source_attribution: intent.editorial.source_attribution,
+            approved_at: intent.editorial.approved_at,
+            publication_policy: {
+              version: intent.editorial.publication_policy.version,
+              outcome: intent.editorial.publication_policy.outcome,
+            },
+          },
+    post: {
+      type: post.type,
+      url: post.url,
+      canonical_url: post.canonical_url,
+      source_item_id: post.source_item_id,
+      title: post.title,
+      source: post.source,
+      origin: post.origin,
+      preview: post.preview,
+      embed: post.embed,
+      body: post.body,
+      references: post.references,
+    },
+  };
+}
+
+/** SHA-256 of the canonical PublicationIntent v1 document. */
 export function contentHashForPublicationIntent(
   intent: Omit<PublicationIntent, 'content_hash'>,
 ): string {
-  return contentHashForPost(intent.post);
+  const document = publicationIntentHashDocument(intent);
+  // Validate strings before JSON.stringify so invalid UTF-16 never gains a
+  // producer-specific replacement character during serialization.
+  canonicalPublicationJson(document);
+  return createHash('sha256')
+    .update(JSON.stringify(document), 'utf8')
+    .digest('hex');
 }
 
 export function contentHashForPost(post: CreatePostInput): string {

@@ -58,7 +58,7 @@ test('Discovery export v1 maps to the sole core PublicationIntent v1', () => {
     approved: true,
   });
   assert.equal(imported[0]!.origin, 'auto');
-  assert.equal(imported[0]!.content_hash, exported.intents[0]!.content_hash);
+  assert.notEqual(imported[0]!.content_hash, exported.intents[0]!.content_hash);
   assert.equal(imported[0]!.editorial?.publication_policy.version, 'policy-v1');
 });
 

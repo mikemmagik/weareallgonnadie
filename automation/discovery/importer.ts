@@ -10,9 +10,10 @@ import type { Publisher } from '../core/state.ts';
 import type { CreatePostResult } from '../../shared/contracts.ts';
 
 /**
- * Strict compatibility reader for the fixed Discovery 7ac6bcb export. It is
- * not another Publisher and does not accept an alternative site intent: after
- * validation, it normalizes data into the sole core PublicationIntent v1.
+ * @deprecated Strict compatibility reader for the retired Discovery 7ac6bcb
+ * batch export. New Sprint 6 traffic must use ingress.ts and submit the core
+ * PublicationIntent v1 directly. This module is retained only to read a
+ * bounded historical export; it is not imported by the active pipeline.
  */
 const PRODUCER = 'waagd-discovery';
 const SHA256 = /^[a-f0-9]{64}$/;
@@ -189,7 +190,7 @@ export function importDiscoveryPublicationExportV1(
   return intents;
 }
 
-/** Trusted host entrypoint: validate/import, then use the existing Publisher once. */
+/** @deprecated Historical batch entrypoint; use acceptDiscoveryPublicationIntent. */
 export async function acceptDiscoveryPublicationExportV1(
   publisher: Publisher,
   input: unknown,
