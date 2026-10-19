@@ -97,7 +97,11 @@ test('PublicationIntent requires authenticated Discovery ingress and retains a d
     'created',
   );
   assert.equal(calls, 1);
-  assert.ok(await publisher.state.read('receipt-discovery-12345678.json'));
+  const receiptName = (await publisher.state.names()).find((name) =>
+    name.startsWith('receipt-'),
+  );
+  assert.ok(receiptName);
+  assert.ok(await publisher.state.read(receiptName!));
 
   const changed = withPublicationIntentContentHash({
     ...intent(),
@@ -166,10 +170,11 @@ test('automatic intents fail closed, reject article type, and replay only after 
   await publisher.setPaused('auto', false);
   assert.deepEqual(await publisher.replay(), { sent: 1, failed: 0 });
   assert.equal(calls, 4);
+  const receiptName = (await publisher.state.names()).find((name) =>
+    name.startsWith('receipt-'),
+  );
   assert.match(
-    JSON.stringify(
-      await publisher.state.read('receipt-discovery-12345678.json'),
-    ),
+    JSON.stringify(await publisher.state.read(receiptName!)),
     /"status":"published"/,
   );
 });

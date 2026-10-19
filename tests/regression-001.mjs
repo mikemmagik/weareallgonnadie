@@ -26,6 +26,7 @@ test(
     for (const key of Object.keys(process.env))
       if (/^(CLOUDFLARE_|CF_)/.test(key)) delete process.env[key];
     const dir = await mkdtemp(join(tmpdir(), 'waagd-regression-'));
+    await mkdir(evidence, { recursive: true });
     const config = join(dir, 'wrangler.json');
     const persist = join(dir, 'd1');
     const token = `regression-only-${randomUUID()}`;
@@ -356,6 +357,7 @@ test(
 );
 
 test('SEC-003 late DNS completion and successive redirects obey one deadline', async (t) => {
+  await mkdir(evidence, { recursive: true });
   let sockets = 0,
     resolveDns;
   t.mock.method(

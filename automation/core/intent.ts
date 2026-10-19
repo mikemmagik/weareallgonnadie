@@ -39,7 +39,8 @@ export interface EditorialMetadata {
 
 export class PublicationIntentError extends Error {}
 
-const INTENT_ID = /^[a-z][a-z0-9-]{7,127}$/;
+/** Supports legacy site IDs and Discovery's stable `auto:<hash>:<revision>`. */
+const INTENT_ID = /^[a-z][a-z0-9:_-]{7,255}$/;
 const OWNER_KEY = /^[a-f0-9]{32,128}$/;
 const CONTENT_HASH = /^[a-f0-9]{64}$/;
 
@@ -81,35 +82,50 @@ function timestamp(
   return true;
 }
 
-/** Canonical, content-addressed document. Do not hash caller key order. */
-function hashDocument(intent: Omit<PublicationIntent, 'content_hash'>): string {
-  const post = intent.post;
-  return JSON.stringify({
-    version: intent.version,
-    intent_id: intent.intent_id,
-    origin: intent.origin,
-    authorization: intent.authorization,
-    editorial: intent.editorial,
-    post: {
-      type: post.type,
-      url: post.url,
-      canonical_url: post.canonical_url,
-      source_item_id: post.source_item_id,
-      title: post.title,
-      source: post.source,
-      origin: post.origin,
-      preview: post.preview,
-      embed: post.embed,
-      body: post.body,
-      references: post.references,
-    },
-  });
+/**
+ * Cross-language canonical JSON for content hashing: sort object keys, preserve
+ * array order, use compact UTF-8 JSON, and reject values Python cannot emit with
+ * `ensure_ascii=False, allow_nan=False`. Publication content has no numeric
+ * fields, so this deliberately avoids a non-portable number serializer.
+ */
+export function canonicalPublicationJson(value: unknown): string {
+  if (Array.isArray(value))
+    return `[${value.map((item) => canonicalPublicationJson(item)).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${canonicalPublicationJson(record[key])}`,
+      )
+      .join(',')}}`;
+  }
+  if (value === undefined)
+    throw new PublicationIntentError('Undefined content.');
+  if (
+    typeof value === 'string' &&
+    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(
+      value,
+    )
+  )
+    throw new PublicationIntentError('Invalid Unicode content.');
+  if (typeof value === 'number' && !Number.isFinite(value))
+    throw new PublicationIntentError('Non-finite content.');
+  return JSON.stringify(value);
 }
 
+/** SHA-256 of canonical CreatePostInput only; Python producer uses the same rule. */
 export function contentHashForPublicationIntent(
   intent: Omit<PublicationIntent, 'content_hash'>,
 ): string {
-  return createHash('sha256').update(hashDocument(intent)).digest('hex');
+  return contentHashForPost(intent.post);
+}
+
+export function contentHashForPost(post: CreatePostInput): string {
+  return createHash('sha256')
+    .update(canonicalPublicationJson(post), 'utf8')
+    .digest('hex');
 }
 
 export function withPublicationIntentContentHash(
@@ -122,9 +138,21 @@ export function withPublicationIntentContentHash(
 export function publicationSemanticIdentity(intent: PublicationIntent): string {
   const post = intent.post;
   const canonical = post.canonical_url ?? post.url;
-  return canonical
-    ? `url:${normalizePublicationUrl(canonical)}|source:${post.source}\u0000${post.source_item_id ?? ''}`
-    : `source:${post.source}\u0000${post.source_item_id ?? ''}`;
+  return createHash('sha256')
+    .update(
+      canonicalPublicationJson({
+        intent_id: intent.intent_id,
+        origin: intent.origin,
+        authorization: intent.authorization,
+        editorial: intent.editorial,
+        content_hash: intent.content_hash,
+        canonical_url: canonical ? normalizePublicationUrl(canonical) : null,
+        source: post.source,
+        source_item_id: post.source_item_id,
+      }),
+      'utf8',
+    )
+    .digest('hex');
 }
 
 /**

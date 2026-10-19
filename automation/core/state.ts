@@ -179,6 +179,13 @@ export class State {
 export function payloadKey(payload: CreatePostInput): string {
   return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
+/** Intent IDs are external protocol data and may contain `:`; state names may not. */
+function intentStateKey(intentId: string): string {
+  return createHash('sha256').update(intentId, 'utf8').digest('hex');
+}
+function intentReceiptName(intentId: string): string {
+  return `receipt-${intentStateKey(intentId)}.json`;
+}
 export class Publisher {
   api: Api;
   state: State;
@@ -264,7 +271,7 @@ export class Publisher {
           ? 'Automatic publication is paused.'
           : 'Telegram publication is paused.',
       );
-    const receiptName = `receipt-${checked.value.intent_id}.json`;
+    const receiptName = intentReceiptName(checked.value.intent_id);
     const contentHash = contentHashForPublicationIntent({
       version: checked.value.version,
       intent_id: checked.value.intent_id,
@@ -274,81 +281,85 @@ export class Publisher {
       post: checked.value.post,
     });
     const identity = publicationSemanticIdentity(checked.value);
-    return this.state.locked(`intent-${checked.value.intent_id}`, async () => {
-      const prior = await this.state.read(receiptName);
-      if (prior !== null) {
-        const saved = record(prior);
-        if (
-          saved.intent_id !== checked.value.intent_id ||
-          saved.origin !== checked.value.origin ||
-          saved.content_hash !== contentHash ||
-          saved.semantic_identity !== identity
-        )
-          throw new StateError(
-            'Publication intent conflict: intent_id was already accepted with different content or identity.',
-          );
-        if (saved.result !== undefined) {
-          const result = record(saved.result);
-          const post = parsePost(result.post);
-          if (result.outcome === 'created') return { outcome: 'created', post };
+    return this.state.locked(
+      `intent-${intentStateKey(checked.value.intent_id)}`,
+      async () => {
+        const prior = await this.state.read(receiptName);
+        if (prior !== null) {
+          const saved = record(prior);
           if (
-            result.outcome === 'duplicate' &&
-            (result.matched_by === 'canonical_url' ||
-              result.matched_by === 'source_item_id')
+            saved.intent_id !== checked.value.intent_id ||
+            saved.origin !== checked.value.origin ||
+            saved.content_hash !== contentHash ||
+            saved.semantic_identity !== identity
           )
-            return {
-              outcome: 'duplicate',
-              matched_by: result.matched_by,
-              post,
-            };
-          throw new StateError('Invalid completed publication receipt.');
+            throw new StateError(
+              'Publication intent conflict: intent_id was already accepted with different content or identity.',
+            );
+          if (saved.result !== undefined) {
+            const result = record(saved.result);
+            const post = parsePost(result.post);
+            if (result.outcome === 'created')
+              return { outcome: 'created', post };
+            if (
+              result.outcome === 'duplicate' &&
+              (result.matched_by === 'canonical_url' ||
+                result.matched_by === 'source_item_id')
+            )
+              return {
+                outcome: 'duplicate',
+                matched_by: result.matched_by,
+                post,
+              };
+            throw new StateError('Invalid completed publication receipt.');
+          }
         }
-      }
-      const payload = mapPublicationIntent(checked.value);
-      await this.state.write(receiptName, {
-        intent_id: checked.value.intent_id,
-        origin: checked.value.origin,
-        content_hash: contentHash,
-        semantic_identity: identity,
-        status: 'accepted',
-        accepted_at: new Date().toISOString(),
-      });
-      try {
-        const result = await this.submit(payload, {
-          origin: checked.value.origin,
-          intent_id: checked.value.intent_id,
-          content_hash: contentHash,
-          semantic_identity: identity,
-        });
+        const payload = mapPublicationIntent(checked.value);
         await this.state.write(receiptName, {
           intent_id: checked.value.intent_id,
           origin: checked.value.origin,
           content_hash: contentHash,
           semantic_identity: identity,
-          status: 'published',
-          published_at: new Date().toISOString(),
-          result,
+          status: 'accepted',
+          accepted_at: new Date().toISOString(),
         });
-        return result;
-      } catch (error) {
-        const queued =
-          (await this.state.read(`outgoing-${payloadKey(payload)}.json`)) !==
-          null;
-        await this.state.write(receiptName, {
-          intent_id: checked.value.intent_id,
-          origin: checked.value.origin,
-          content_hash: contentHash,
-          semantic_identity: identity,
-          status: queued ? 'queued' : 'failed',
-          updated_at: new Date().toISOString(),
-          failure:
-            error instanceof RequestFailure
-              ? `HTTP_${error.status}`
-              : 'UNKNOWN',
-        });
-        throw error;
-      }
-    });
+        try {
+          const result = await this.submit(payload, {
+            origin: checked.value.origin,
+            intent_id: checked.value.intent_id,
+            content_hash: contentHash,
+            semantic_identity: identity,
+          });
+          await this.state.write(receiptName, {
+            intent_id: checked.value.intent_id,
+            origin: checked.value.origin,
+            content_hash: contentHash,
+            semantic_identity: identity,
+            status: 'published',
+            published_at: new Date().toISOString(),
+            result,
+          });
+          return result;
+        } catch (error) {
+          const queued =
+            (await this.state.read(`outgoing-${payloadKey(payload)}.json`)) !==
+            null;
+          await this.state.write(receiptName, {
+            intent_id: checked.value.intent_id,
+            origin: checked.value.origin,
+            content_hash: contentHash,
+            semantic_identity: identity,
+            status: queued ? 'queued' : 'failed',
+            updated_at: new Date().toISOString(),
+            failure:
+              error instanceof RequestFailure
+                ? `HTTP_${error.status}`
+                : 'UNKNOWN',
+          });
+          throw error;
+        }
+      },
+    );
   }
   private async markReplayReceipt(
     provenance: {
@@ -365,7 +376,7 @@ export class Publisher {
       !provenance.semantic_identity
     )
       return;
-    const receiptName = `receipt-${provenance.intent_id}.json`;
+    const receiptName = intentReceiptName(provenance.intent_id);
     const receipt = await this.state.read(receiptName);
     if (receipt === null) return;
     const saved = record(receipt);
