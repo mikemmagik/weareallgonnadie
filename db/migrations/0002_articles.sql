@@ -1,6 +1,5 @@
 -- Forward-only Sprint 6 migration. Wrangler rolls back a failed migration atomically.
 -- Retain every immutable identity, timestamp, deletion and existing index/trigger.
-BEGIN;
 CREATE TABLE posts_sprint6 (
   id TEXT PRIMARY KEY NOT NULL COLLATE BINARY
     CHECK (length(id) = 36 AND substr(id, 9, 1) = '-' AND substr(id, 14, 1) = '-'
@@ -48,4 +47,3 @@ WHEN OLD.deleted_at IS NOT NULL AND NEW.deleted_at IS NOT OLD.deleted_at
 BEGIN
   SELECT RAISE(ABORT, 'Deletion cannot be changed or cleared');
 END;
-COMMIT;

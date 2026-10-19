@@ -32,6 +32,9 @@ export function configuration(env: NodeJS.ProcessEnv = process.env) {
   const publishing = env.WAAGD_SPRINT6_PUBLISHING_ENABLED ?? '0';
   if (!['0', '1'].includes(publishing))
     throw new Error('WAAGD_SPRINT6_PUBLISHING_ENABLED must be 0 or 1.');
+  const telegramWorkflow = env.WAAGD_SPRINT6_TELEGRAM_WORKFLOW_ENABLED ?? '0';
+  if (!['0', '1'].includes(telegramWorkflow))
+    throw new Error('WAAGD_SPRINT6_TELEGRAM_WORKFLOW_ENABLED must be 0 or 1.');
   return {
     apiOrigin: required('WAAGD_API_ORIGIN'),
     token: required('WAAGD_API_WRITE_TOKEN'),
@@ -42,6 +45,7 @@ export function configuration(env: NodeJS.ProcessEnv = process.env) {
     openclaw: env.WAAGD_OPENCLAW_BIN ?? 'openclaw',
     timezone,
     publishingEnabled: publishing === '1',
+    telegramWorkflowEnabled: telegramWorkflow === '1',
   };
 }
 export async function loadSources(path?: string): Promise<Source[]> {

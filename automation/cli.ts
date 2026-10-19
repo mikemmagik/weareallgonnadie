@@ -7,6 +7,7 @@ import { runChangelog, previousMonth } from './changelog/run.ts';
 import { pollTelegram } from './telegram/poll.ts';
 import { JournalPublisher } from './publishing/publisher.ts';
 import { publishImported } from './publishing/import.ts';
+import { ownerWorkflow } from './telegram/runtime.ts';
 
 async function main() {
   const config = configuration();
@@ -39,6 +40,14 @@ async function main() {
       config.allowedIds,
       config.botToken,
       controller.signal,
+      undefined,
+      config.telegramWorkflowEnabled
+        ? ownerWorkflow(publisher, {
+            executable: config.openclaw,
+            agent: config.agent,
+            enabled: config.publishingEnabled,
+          })
+        : undefined,
     );
     return;
   }
