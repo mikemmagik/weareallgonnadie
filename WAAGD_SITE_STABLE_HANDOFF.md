@@ -19,7 +19,7 @@ configuration or credential.
   integration checks.
 - The actual pinned Python Discovery producer completed the end-to-end path:
   `producer → validatePublicationIntent → Discovery ingress → Publisher → local
-  Worker/D1 → frontend parser` (42 Worker/D1 integration tests).
+Worker/D1 → frontend parser` (42 Worker/D1 integration tests).
 - Independent regression acceptance passed: 6/6.
 - GitHub Actions must be green for the tagged `main` commit before staging use.
   The release workflow is now triggered for both `main` and the Sprint 6 branch.
@@ -62,14 +62,27 @@ configuration or credential.
 ## Branch inventory and cleanup rule
 
 - `main` is retained and carries the stable release.
-- `sprint-6-site-integration` is the fully merged delivery branch and may be
-  removed remotely only after the tag and this release record are verified.
-- Historical feature/fix/QA branches are removed only when their exact tips are
-  ancestors of `main`, have no active pull request or deployment dependency, and
-  contribute no unique reachable commit. Local worktrees are never deleted by
-  this cleanup.
-- The alternative `codex/sprint6-publication-intent-v1` is not the release
-  implementation and is considered only under that same ancestry proof.
+- **Deleted branches:** none. The audit found active local worktrees for the
+  merged historical branches and the original Sprint 6 worktree still carries
+  user-owned unstaged document deletions. Remote branch deletion would make
+  that live work harder to recover, so it is deliberately deferred.
+- **Merged but retained active branches:**
+  `feat/automation`, `feat/backend`, `feat/frontend`, `feat/legal-disclaimer`,
+  `fix/final-media`, `fix/firefox-focus`, `fix/legacy-tiktok`,
+  `fix/media-qa-001`, `fix/media-ux-001`, `fix/qa-001`,
+  `fix/reddit-compact`, `integration/mvp`, `integration/release-candidate`,
+  `qa/final-rc`, `qa/media-fix-002`, `qa/media-fix-003`,
+  `qa/media-polish-001`, `qa/media-ux-001`, `qa/mvp`,
+  `qa/regression-001`, `qa/release-candidate`, and
+  `sprint-6-site-integration`.
+- **Unmerged and retained:** `codex/sprint6-publication-intent-v1` and
+  `codex/sprint6-site-e2e`. They contain the alternative JournalPublisher-era
+  history, so they are intentionally not part of the stable implementation and
+  are retained rather than destroyed pending a separately authorized archival
+  decision.
+- A future cleanup may remove a remote branch only after its exact tip is an
+  ancestor of `main`, it has no active worktree, open pull request, release tag
+  or deployment dependency, and it contributes no unique reachable commit.
 
 ## Production blockers
 
