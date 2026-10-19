@@ -119,7 +119,7 @@ export function parsePublicationBatch(value: unknown): PublicationIntent[] {
     batch.schema_version !== 1 ||
     batch.producer !== PRODUCER ||
     !Array.isArray(batch.intents) ||
-    batch.intents.length > 20
+    batch.intents.length > 100
   )
     throw new PublicationImportError('invalid_batch');
   const bytes = Buffer.byteLength(JSON.stringify(batch), 'utf8');
