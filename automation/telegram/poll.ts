@@ -3,6 +3,7 @@ import { record } from '../core/api.ts';
 import { handleUpdate } from './handler.ts';
 import { pause, retryRequest } from '../core/http.ts';
 import type { Http } from '../core/http.ts';
+import type { TelegramSubmissionWorkflow } from './workflow.ts';
 
 export async function telegramCall(
   http: Http,
@@ -32,6 +33,7 @@ export async function pollTelegram(
   token: string,
   signal: AbortSignal,
   http: Http = fetch,
+  workflow?: TelegramSubmissionWorkflow,
 ) {
   if (!token || !allowedIds.size)
     throw new Error('Telegram credentials and IDs are required.');
@@ -60,7 +62,13 @@ export async function pollTelegram(
             Number(update.update_id) < offset
           )
             continue;
-          const reply = await handleUpdate(update, allowedIds, publisher);
+          const reply = await handleUpdate(
+            update,
+            allowedIds,
+            publisher,
+            undefined,
+            workflow,
+          );
           if (reply)
             await telegramCall(
               http,

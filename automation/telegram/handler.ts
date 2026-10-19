@@ -5,6 +5,10 @@ import type { Http } from '../core/http.ts';
 import { RequestFailure, UnsafeUrlError } from '../core/http.ts';
 import { StateError, payloadKey } from '../core/state.ts';
 import type { CreatePostInput } from '../../shared/contracts.ts';
+import {
+  TelegramWorkflowError,
+  type TelegramSubmissionWorkflow,
+} from './workflow.ts';
 
 export interface Reply {
   chatId: number;
@@ -15,6 +19,7 @@ export async function handleUpdate(
   allowedIds: ReadonlySet<string>,
   publisher: Publisher,
   http?: Http,
+  workflow?: TelegramSubmissionWorkflow,
 ): Promise<Reply | null> {
   try {
     const value = record(update);
@@ -32,10 +37,29 @@ export async function handleUpdate(
     )
       return null;
     const chatId = chat.id as number;
+    if (
+      workflow &&
+      [
+        'photo',
+        'video',
+        'document',
+        'animation',
+        'audio',
+        'voice',
+        'sticker',
+        'video_note',
+      ].some((field) => field in message)
+    )
+      return {
+        chatId,
+        text: 'FAILED: Binary Telegram media is unsupported. Send a public media URL as text.',
+      };
     if (typeof message.text !== 'string')
       return {
         chatId,
-        text: 'FAILED: Send one public URL or /delete <post_id>.',
+        text: workflow
+          ? 'FAILED: Send a URL or text, /preview <id>, /publish <id>, or /delete <post_id>.'
+          : 'FAILED: Send one public URL or /delete <post_id>.',
       };
     const text = message.text.trim();
     let payload: CreatePostInput | undefined;
@@ -47,6 +71,40 @@ export async function handleUpdate(
         const result = await publisher.api.delete(id);
         return { chatId, text: `DELETED\nPublication ID: ${result.id}` };
       }
+      if (workflow) {
+        const command = text.match(/^\/(preview|publish)(?:\s+(\S+))?$/);
+        if (command) {
+          const id = command[2];
+          if (!id || text.split(/\s+/).length !== 2)
+            throw new TelegramWorkflowError(
+              'Expected /preview <id> or /publish <id>.',
+            );
+          return {
+            chatId,
+            text:
+              command[1] === 'preview'
+                ? await workflow.preview(id, chatId)
+                : await workflow.publish(id, chatId),
+          };
+        }
+        if (text.startsWith('/'))
+          throw new TelegramWorkflowError('Unknown Telegram command.');
+        const id = await workflow.stage({
+          ownerId: chatId,
+          updateId: Number.isSafeInteger(value.update_id)
+            ? (value.update_id as number)
+            : null,
+          messageId: Number.isSafeInteger(message.message_id)
+            ? (message.message_id as number)
+            : null,
+          text,
+          kind: /^https?:\/\/\S+$/i.test(text) ? 'url' : 'text',
+        });
+        return {
+          chatId,
+          text: `STAGED ${id}\n${await workflow.preview(id, chatId)}\nUse /publish ${id} to publish.`,
+        };
+      }
       // The human approved the URL. This path never calls the editorial AI.
       payload = await prepareUrl(text, http);
       const result = await publisher.submit(payload);
@@ -55,6 +113,11 @@ export async function handleUpdate(
         text: `${result.outcome === 'created' ? 'PUBLISHED' : 'ALREADY EXISTS'}\n${publisher.api.siteUrl(result.post.id)}\nPublication ID: ${result.post.id}${result.post.deleted_at ? '\nPreviously deleted; remains deleted.' : ''}`,
       };
     } catch (error) {
+      if (workflow && !/^\/delete(?:\s|$)/.test(text))
+        return {
+          chatId,
+          text: `FAILED: ${error instanceof TelegramWorkflowError ? error.message : 'Editorial workflow or publication could not be completed.'}`,
+        };
       let saved = false;
       if (payload) {
         try {
