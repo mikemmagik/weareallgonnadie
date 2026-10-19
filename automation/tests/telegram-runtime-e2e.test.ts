@@ -28,28 +28,30 @@ test('fake Gateway, owner preview and journaled Worker post complete one idempot
   t.after(() => rm(directory, { recursive: true, force: true }));
   const response = {
     status: 'ok',
-    payloads: [
-      {
-        text: JSON.stringify({
-          schema_version: 1,
-          decision: 'ready',
-          payload: {
-            type: 'article',
-            origin: 'telegram',
-            url: sourceUrl,
-            canonical_url: sourceUrl,
-            source_item_id: null,
-            title: 'Gateway fixture',
-            source: 'WAAGD',
-            preview: null,
-            embed: null,
-            body: 'A fictional and bounded editorial fixture.',
-            references: [],
-          },
-        }),
-      },
-    ],
-    meta: { toolSummary: { calls: 0 } },
+    result: {
+      payloads: [
+        {
+          text: JSON.stringify({
+            schema_version: 1,
+            decision: 'ready',
+            payload: {
+              type: 'article',
+              origin: 'telegram',
+              url: sourceUrl,
+              canonical_url: sourceUrl,
+              source_item_id: null,
+              title: 'Gateway fixture',
+              source: 'WAAGD',
+              preview: null,
+              embed: null,
+              body: 'A fictional and bounded editorial fixture.',
+              references: [],
+            },
+          }),
+        },
+      ],
+      meta: { toolSummary: { calls: 0 } },
+    },
   };
   const executable = join(directory, 'fake-gateway.mjs');
   await writeFile(

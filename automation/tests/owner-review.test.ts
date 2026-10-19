@@ -47,12 +47,18 @@ test('owner Gateway adapter strips unrelated secrets and accepts only tool-free 
   });
   const reply = {
     status: 'ok',
-    payloads: [
-      {
-        text: JSON.stringify({ schema_version: 1, decision: 'ready', payload }),
-      },
-    ],
-    meta: { toolSummary: { calls: 0 } },
+    result: {
+      payloads: [
+        {
+          text: JSON.stringify({
+            schema_version: 1,
+            decision: 'ready',
+            payload,
+          }),
+        },
+      ],
+      meta: { toolSummary: { calls: 0 } },
+    },
   };
   const reviewer = new GatewayOwnerReviewer({
     executable: await executable(t, reply),

@@ -57,16 +57,25 @@ function parse(value: string, submission: TelegramSubmission): EditorialReview {
   } catch {
     throw new OwnerReviewError('Gateway did not return JSON.');
   }
+  let result: Record<string, unknown>;
+  try {
+    result = envelope.result === undefined ? envelope : record(envelope.result);
+  } catch {
+    throw new OwnerReviewError('Gateway response is malformed.');
+  }
+  const meta = envelope.meta === undefined ? result.meta : envelope.meta;
   if (
     envelope.ok === false ||
     (envelope.status !== 'ok' && envelope.status !== 'completed') ||
-    !Array.isArray(envelope.payloads) ||
-    envelope.payloads.length !== 1 ||
-    !record(envelope.meta).toolSummary ||
-    record(record(envelope.meta).toolSummary).calls !== 0
+    'deliveryStatus' in envelope ||
+    'deliveryStatus' in result ||
+    !Array.isArray(result.payloads) ||
+    result.payloads.length !== 1 ||
+    !record(meta).toolSummary ||
+    record(record(meta).toolSummary).calls !== 0
   )
     throw new OwnerReviewError('Gateway response is not tool-free.');
-  const item = record(envelope.payloads[0]);
+  const item = record(result.payloads[0]);
   if (Object.keys(item).length !== 1 || typeof item.text !== 'string')
     throw new OwnerReviewError('Gateway response is malformed.');
   let review: Record<string, unknown>;
