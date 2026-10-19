@@ -66,6 +66,25 @@ service manager. Its supervised Node child keeps the existing standalone CLI usa
 for diagnostics. The owner confirmed OpenClaw is absent on the integration Mac;
 real host/version/model/bot verification is a documented prerequisite.
 
+## Sprint 6 isolated publication decision
+
+Sprint 6 adds `article` as a fifth publication type for bounded authored English
+satire. Unlike news, video and meme entries, an article may be a text-only owner
+submission and therefore has a nullable original URL, while always requiring a
+non-empty plain-text body. `canonical_url` remains null without an original URL;
+the immutable `(source, source_item_id)` identity continues to deduplicate retries.
+Migration `0002_articles.sql` is forward-only and copies all existing rows before
+replacing the strict table and recreating its indexes and triggers. The Worker still
+does not fetch URLs or decide editorial approval.
+
+The HTTP-only publisher keeps its bearer token and journal outside model/workspace
+processes. A default-off operator kill switch, trusted authorization callback,
+bounded request budgets, idempotent Worker identities and uncertain-write
+reconciliation guard publication. Telegram owner submissions are persisted for
+preview and require an explicit publish command. These changes are tested only
+against fake Telegram/OpenClaw boundaries and local Worker/D1; no live bot,
+Gateway, Cloudflare account or deployment has changed.
+
 ## FIX-001 remediation decisions
 
 Preserve contract v1 and tracking-based canonical identity, even when a TikTok short

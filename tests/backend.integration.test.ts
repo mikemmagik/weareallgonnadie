@@ -100,7 +100,9 @@ test(
           ],
           { cwd: root, encoding: 'utf8', env: { ...process.env, CI: 'true' } },
         );
-      assert.match(migrate(), /0001_posts.sql/);
+      const applied = migrate();
+      assert.match(applied, /0001_posts.sql/);
+      assert.match(applied, /0002_articles.sql/);
       assert.match(migrate(), /No migrations to apply/);
       proxy = await getPlatformProxy<{ DB: D1Database }>({
         configPath: config,
@@ -783,11 +785,13 @@ test(
           const result = await create();
           assert.equal(result.status, 201);
           assert.match(result.data.post.id, /^[0-9a-f-]+$/);
-          assert.equal(
-            await db
-              .prepare('SELECT COUNT(*) AS count FROM d1_migrations')
-              .first<number>('count'),
-            1,
+          const migrations = await db
+            .prepare('SELECT name FROM d1_migrations ORDER BY id')
+            .all<{ name: string }>();
+          assert.equal(migrations.success, true);
+          assert.deepEqual(
+            migrations.results.map((row) => row.name),
+            ['0001_posts.sql', '0002_articles.sql'],
           );
           await assert.rejects(
             db
@@ -1039,7 +1043,7 @@ test(
       );
       await reset();
       await t.test(
-        'URL-less changelogs, all content kinds and provider metadata round-trip',
+        'URL-less authored articles and changelogs round-trip with stable identity',
         async () => {
           const changelog: CreatePostInput = {
             ...fixture,
@@ -1053,6 +1057,23 @@ test(
           assert.equal(created.status, 201);
           assert.equal(created.data.post.canonical_url, null);
           assert.equal((await create(changelog)).status, 200);
+          const article: CreatePostInput = {
+            ...fixture,
+            type: 'article',
+            url: null,
+            canonical_url: null,
+            source: 'WAAGD',
+            source_item_id: 'telegram-submission-fixture',
+            body: 'The committee confirmed the paperwork was in charge.',
+            preview: null,
+            embed: null,
+          };
+          const publishedArticle = await create(article);
+          assert.equal(publishedArticle.status, 201);
+          assert.equal(publishedArticle.data.post.type, 'article');
+          assert.equal(publishedArticle.data.post.url, null);
+          assert.equal(publishedArticle.data.post.body, article.body);
+          assert.equal((await create(article)).status, 200);
           for (const type of ['video', 'meme'] as const) {
             const input: CreatePostInput = {
               ...fixture,
@@ -1589,7 +1610,14 @@ test(
     } finally {
       await server?.stop();
       await proxy?.dispose();
-      await rm(directory, { recursive: true, force: true });
+      // Wrangler may flush a debug record after its server handle resolves on macOS.
+      // Keep teardown isolated, but tolerate that documented asynchronous final write.
+      await rm(directory, {
+        recursive: true,
+        force: true,
+        maxRetries: 4,
+        retryDelay: 100,
+      });
     }
   },
 );

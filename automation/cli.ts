@@ -5,6 +5,8 @@ import { OpenClawAI } from './openclaw/ai.ts';
 import { runDiscovery } from './discovery/run.ts';
 import { runChangelog, previousMonth } from './changelog/run.ts';
 import { pollTelegram } from './telegram/poll.ts';
+import { JournalPublisher } from './publishing/publisher.ts';
+import { publishImported } from './publishing/import.ts';
 
 async function main() {
   const config = configuration();
@@ -14,6 +16,20 @@ async function main() {
   );
   const ai = new OpenClawAI(config.openclaw, config.agent);
   const command = process.argv[2];
+  if (command === 'publish-import') {
+    const journal = new JournalPublisher({
+      api: publisher.api,
+      state: publisher.state,
+      // The fixed private State inbox and strict parser below establish the
+      // trusted capability boundary; the agent never gets this callback/token.
+      authorize: async () => true,
+      enabled: () => config.publishingEnabled,
+    });
+    console.log(
+      JSON.stringify(await publishImported(publisher.state, journal)),
+    );
+    return;
+  }
   if (command === 'telegram') {
     const controller = new AbortController();
     process.once('SIGINT', () => controller.abort());
@@ -60,7 +76,7 @@ async function main() {
     return;
   }
   throw new Error(
-    'Usage: node automation/cli.ts telegram|daily|monthly [YYYY-MM]|retry',
+    'Usage: node automation/cli.ts telegram|daily|monthly [YYYY-MM]|retry|publish-import',
   );
 }
 main().catch(() => {

@@ -56,6 +56,28 @@ test('changelogs allow no external URL but require their own content', () => {
   );
 });
 
+test('authored articles allow owner text without an invented URL and require body', () => {
+  const article = {
+    ...publication,
+    type: 'article',
+    origin: 'telegram',
+    url: null,
+    body: 'A fictional ministry issues an extremely real paperwork warning.',
+  };
+  assert.equal(validateCreatePostInput(article).valid, true);
+  assert.equal(
+    validateCreatePostInput({ ...article, url: publication.url }).valid,
+    true,
+  );
+  for (const body of [null, '', '  ', undefined])
+    assert.equal(validateCreatePostInput({ ...article, body }).valid, false);
+  assert.equal(
+    validateCreatePostInput({ ...article, canonical_url: publication.url })
+      .valid,
+    false,
+  );
+});
+
 test('URLs reject executable schemes, credentials, relative URLs, whitespace, and overlong values', () => {
   for (const url of [
     'javascript:alert(1)',

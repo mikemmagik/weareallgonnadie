@@ -280,7 +280,7 @@ export function renderPost(post: Post, index: number): HTMLElement {
   const original = safeUrl(post.url);
   const label = post.title?.trim() || 'Untitled transmission';
   title.append(
-    original
+    original && post.type !== 'article'
       ? externalLink(original, label, 'headline-link')
       : document.createTextNode(label),
   );
@@ -309,7 +309,13 @@ export function renderPost(post: Post, index: number): HTMLElement {
     }
     content.append(log);
   } else if (post.body?.trim())
-    content.append(element('p', 'post-preview', post.body));
+    content.append(
+      element(
+        post.type === 'article' ? 'div' : 'p',
+        post.type === 'article' ? 'article-body' : 'post-preview',
+        post.body,
+      ),
+    );
   const source = element('div', 'post-source');
   source.append(
     element(
@@ -322,7 +328,12 @@ export function renderPost(post: Post, index: number): HTMLElement {
   );
   source.append(
     original
-      ? externalLink(original, `${post.source || 'Original source'} ↗`)
+      ? externalLink(
+          original,
+          post.type === 'article'
+            ? 'Original report ↗'
+            : `${post.source || 'Original source'} ↗`,
+        )
       : element('span', '', post.source),
   );
   content.append(source);
@@ -354,7 +365,7 @@ export function renderPost(post: Post, index: number): HTMLElement {
           hint.append(externalLink(destination, 'Open original ↗'));
         article.append(hint);
       }
-    } else {
+    } else if (post.type !== 'article') {
       article.classList.add('text-only');
       content.append(
         element(

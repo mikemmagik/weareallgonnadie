@@ -26,23 +26,26 @@ Unknown input fields are rejected, including nested metadata and server-owned fi
 | Field            | Type           | Rules                                                                                          |
 | ---------------- | -------------- | ---------------------------------------------------------------------------------------------- |
 | `id`             | string         | Server-generated lowercase UUID v4; immutable                                                  |
-| `url`            | string or null | Original absolute HTTP(S) URL; required for news/video/meme, nullable for changelog            |
+| `url`            | string or null | Original absolute HTTP(S) URL; required for news/video/meme, nullable for changelog/article    |
 | `canonical_url`  | string or null | Input hint; backend normalizes this or original URL for deduplication; null for URL-less posts |
 | `source_item_id` | string or null | Stable ID within the exact source namespace; max 256 characters                                |
 | `title`          | string         | Non-empty text, max 300 characters                                                             |
 | `source`         | string         | Non-empty stable source label/namespace, max 100 characters; case-sensitive                    |
-| `type`           | enum           | `news`, `video`, `meme`, `changelog`                                                           |
+| `type`           | enum           | `news`, `video`, `meme`, `changelog`, `article`                                                |
 | `origin`         | enum           | `auto`, `telegram`; provenance, never authorization                                            |
 | `preview`        | object or null | `{image_url: string, alt_text: string or null}`                                                |
 | `embed`          | object or null | Provider metadata or fallback link below                                                       |
-| `body`           | string or null | Plain text/Markdown, max 100,000 characters; non-empty for changelog                           |
+| `body`           | string or null | Plain text, max 100,000 characters; non-empty for changelog/article                            |
 | `references`     | array          | Up to 100 `{url: string, title: string or null}` objects                                       |
 | `published_at`   | string         | Server insertion time, immutable UTC `YYYY-MM-DDTHH:mm:ss.sssZ`                                |
 | `deleted_at`     | string or null | Server UTC soft-deletion time; null while visible                                              |
 
 Regular content aggregates a source and requires a valid original URL even when
 an embed is supplied. Changelogs require their own non-whitespace body, may have no
-external URL, and can cite source references. `canonical_url` must be null when `url`
+external URL, and can cite source references. Articles are authored text, require a
+non-empty body, and may have no original URL for owner-submitted text. An automatic
+article must cite its checked source URLs in `references`; neither `origin` nor the
+article type is publication authorization. `canonical_url` must be null when `url`
 is null. Source publication dates do not control feed ordering. Clients cannot set
 `id`, `published_at` or `deleted_at`.
 

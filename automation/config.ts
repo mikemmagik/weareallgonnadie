@@ -29,6 +29,9 @@ export function configuration(env: NodeJS.ProcessEnv = process.env) {
     throw new Error('Telegram IDs must be numeric user IDs.');
   const timezone = env.WAAGD_TIMEZONE ?? 'Asia/Bangkok';
   new Intl.DateTimeFormat('en', { timeZone: timezone });
+  const publishing = env.WAAGD_SPRINT6_PUBLISHING_ENABLED ?? '0';
+  if (!['0', '1'].includes(publishing))
+    throw new Error('WAAGD_SPRINT6_PUBLISHING_ENABLED must be 0 or 1.');
   return {
     apiOrigin: required('WAAGD_API_ORIGIN'),
     token: required('WAAGD_API_WRITE_TOKEN'),
@@ -38,6 +41,7 @@ export function configuration(env: NodeJS.ProcessEnv = process.env) {
     agent: env.WAAGD_OPENCLAW_AGENT ?? 'waagd',
     openclaw: env.WAAGD_OPENCLAW_BIN ?? 'openclaw',
     timezone,
+    publishingEnabled: publishing === '1',
   };
 }
 export async function loadSources(path?: string): Promise<Source[]> {

@@ -4,7 +4,13 @@
  * Stored legacy content retains its original fields and is checked at render time.
  */
 export const CONTRACT_VERSION = 1 as const;
-export const POST_TYPES = ['news', 'video', 'meme', 'changelog'] as const;
+export const POST_TYPES = [
+  'news',
+  'video',
+  'meme',
+  'changelog',
+  'article',
+] as const;
 export const POST_ORIGINS = ['auto', 'telegram'] as const;
 export const EMBED_PROVIDERS = [
   'youtube',
@@ -45,8 +51,8 @@ interface PostContent {
 }
 export type CreatePostInput = PostContent &
   (
-    | { type: Exclude<PostType, 'changelog'>; url: string }
-    | { type: 'changelog'; url: string | null; body: string }
+    | { type: Exclude<PostType, 'changelog' | 'article'>; url: string }
+    | { type: 'changelog' | 'article'; url: string | null; body: string }
   );
 export type Post = CreatePostInput & {
   id: PostId;
@@ -234,7 +240,7 @@ export function validateCreatePostInput(
     issue('type', 'Unsupported post type.');
   if (!POST_ORIGINS.includes(input.origin as PostOrigin))
     issue('origin', 'Unsupported origin.');
-  url(input.url, 'url', input.type === 'changelog');
+  url(input.url, 'url', input.type === 'changelog' || input.type === 'article');
   url(input.canonical_url, 'canonical_url', true);
   if (input.url === null && input.canonical_url !== null)
     issue('canonical_url', 'Must be null when url is null.');
@@ -246,7 +252,12 @@ export function validateCreatePostInput(
     CONTENT_LIMITS.source_item_id,
     true,
   );
-  text(input.body, 'body', CONTENT_LIMITS.body, input.type !== 'changelog');
+  text(
+    input.body,
+    'body',
+    CONTENT_LIMITS.body,
+    input.type !== 'changelog' && input.type !== 'article',
+  );
   if (input.preview !== null) {
     if (!isRecord(input.preview))
       issue('preview', 'Expected preview metadata or null.');

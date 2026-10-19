@@ -494,6 +494,12 @@ dd {
   color: var(--green);
   font-size: 24px;
 }
+.post-article .article-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.65;
+  max-width: 72ch;
+}
 .release-label {
   color: #8eb79d;
   font-size: 10px;

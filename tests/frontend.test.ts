@@ -94,12 +94,18 @@ function envelope(
   return { ok: true, data: { posts, next_cursor } };
 }
 
-test('wire parsing uses shared types, supports all four kinds and nullable metadata', () => {
+test('wire parsing uses shared types, supports all five kinds and nullable metadata', () => {
   const posts: Post[] = [
     fixture(),
     { ...fixture(2), type: 'video' },
     { ...fixture(3), type: 'meme' },
     { ...fixture(4), type: 'changelog', url: null, body: '[ADDED]\n- Panic' },
+    {
+      ...fixture(5),
+      type: 'article',
+      url: null,
+      body: 'A cautious satirical article.',
+    },
   ];
   assert.deepEqual(parsePage(envelope(posts)).posts, posts);
   assert.equal(
