@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, open, writeFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +18,21 @@ import { handleUpdate } from '../automation/telegram/handler.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const evidence = join(root, 'output/regression-001');
+
+async function removeTemporaryDirectory(path) {
+  let last;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      await rm(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      last = error;
+      if (error?.code !== 'ENOTEMPTY') throw error;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+  throw last;
+}
 
 test(
   'independent local D1 acceptance challenges',
@@ -351,7 +366,7 @@ test(
     } finally {
       await server?.stop();
       await proxy?.dispose();
-      await rm(dir, { recursive: true, force: true });
+      await removeTemporaryDirectory(dir);
     }
   },
 );
@@ -451,8 +466,13 @@ test('D04 atomic replacement remains readable and unrelated permissions stay unc
     assert.equal((await stat(unrelated)).mode, before);
     const state = new State(join(dir, 'private'));
     await state.write('record.json', { version: 0 });
-    const original = (await stat(join(state.dir, 'record.json'))).ino;
-    for (let version = 1; version <= 20; version++) {
+    const retained = await open(join(state.dir, 'record.json'), 'r');
+    await state.write('record.json', { version: 1 });
+    assert.deepEqual(JSON.parse(await retained.readFile('utf8')), {
+      version: 0,
+    });
+    await retained.close();
+    for (let version = 2; version <= 20; version++) {
       await state.write('record.json', { version });
       assert.deepEqual(await new State(state.dir).read('record.json'), {
         version,
@@ -462,9 +482,8 @@ test('D04 atomic replacement remains readable and unrelated permissions stay unc
         0o600,
       );
     }
-    assert.notEqual((await stat(join(state.dir, 'record.json'))).ino, original);
     assert.deepEqual(await state.names(), ['record.json']);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await removeTemporaryDirectory(dir);
   }
 });
