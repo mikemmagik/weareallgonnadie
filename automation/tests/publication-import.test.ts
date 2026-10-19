@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Api } from '../core/api.ts';
@@ -94,6 +94,49 @@ test('private v1 hand-off validates exact provenance and journal replay', async 
   assert.equal(second.results[0]?.status, 'published');
   assert.equal(posts, 1);
 });
+
+test(
+  'cross-repository Python publication envelope reaches the journal exactly once',
+  { skip: !process.env.WAAGD_DISCOVERY_PUBLICATION_FIXTURE },
+  async (t) => {
+    const directory = await mkdtemp(join(tmpdir(), 'waagd-cross-e2e-'));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const state = new State(directory);
+    const input = JSON.parse(
+      await readFile(process.env.WAAGD_DISCOVERY_PUBLICATION_FIXTURE!, 'utf8'),
+    );
+    await state.write(PUBLICATION_INBOX, input);
+    let posts = 0;
+    const publisher = new JournalPublisher({
+      api: new Api('https://site.example', 'test-token', async (_url, init) => {
+        assert.equal(init?.method, 'POST');
+        posts++;
+        const payload = JSON.parse(String(init?.body));
+        return Response.json(
+          {
+            ok: true,
+            data: {
+              outcome: 'created',
+              post: {
+                ...payload,
+                id,
+                published_at: '2026-10-19T00:00:00.000Z',
+                deleted_at: null,
+              },
+            },
+          },
+          { status: 201 },
+        );
+      }),
+      state,
+      authorize: async () => true,
+      enabled: () => true,
+    });
+    await publishImported(state, publisher);
+    await publishImported(state, publisher);
+    assert.equal(posts, 1);
+  },
+);
 
 test('invalid batch and kill switch cannot issue a Worker request', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'waagd-publication-import-'));
