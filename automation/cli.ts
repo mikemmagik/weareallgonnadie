@@ -15,6 +15,10 @@ async function main() {
   const ai = new OpenClawAI(config.openclaw, config.agent);
   const command = process.argv[2];
   if (command === 'telegram') {
+    if (!config.legacyTelegramPollerEnabled)
+      throw new Error(
+        'Legacy Telegram polling is disabled. Use the existing OpenClaw delivery integration, or explicitly set WAAGD_ENABLE_LEGACY_TELEGRAM_POLLER=true for a compatibility test with one confirmed polling owner.',
+      );
     const controller = new AbortController();
     process.once('SIGINT', () => controller.abort());
     process.once('SIGTERM', () => controller.abort());
@@ -27,6 +31,10 @@ async function main() {
     return;
   }
   if (command === 'daily') {
+    if (!config.legacyDailyEnabled)
+      throw new Error(
+        'Legacy daily discovery is disabled. WAAGD Discovery is the automatic source; set WAAGD_ENABLE_LEGACY_DAILY=true only for controlled compatibility testing.',
+      );
     console.log(
       JSON.stringify(
         await runDiscovery(

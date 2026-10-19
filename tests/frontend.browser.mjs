@@ -27,7 +27,7 @@ export async function verifyMonitor(page, base = 'http://127.0.0.1:4321') {
   const fixtures = [
     post(1, {
       title: '<img src=x onerror=alert(1)>',
-      body: '<script>window.pwned=true</script>',
+      body: 'First complete paragraph.\nIt keeps its original line break.\n\n<script>window.pwned=true</script>\n\nFinal complete paragraph.',
       preview: {
         image_url: 'https://images.example/robot.svg',
         alt_text: 'Robots',
@@ -162,6 +162,24 @@ export async function verifyMonitor(page, base = 'http://127.0.0.1:4321') {
   check(
     (await page.locator('#feed script, #feed img[onerror]').count()) === 0,
     'External HTML remains inert text',
+  );
+  check(
+    (await page.locator('.post-news .article-paragraph').count()) === 3,
+    'News body renders as separate plain-text paragraphs',
+  );
+  check(
+    (
+      await page.locator('.post-news .article-body').first().innerText()
+    ).includes('<script>window.pwned=true</script>'),
+    'Article markup remains inert text',
+  );
+  check(
+    (await page
+      .locator('.post-news .article-paragraph')
+      .first()
+      .evaluate((paragraph) => getComputedStyle(paragraph).webkitLineClamp)) ===
+      'none',
+    'Full news body is not line-clamped',
   );
   check(
     (await page.locator('.post-title').last().innerText()) ===
@@ -326,6 +344,6 @@ if (import.meta.main) {
     { encoding: 'utf8', maxBuffer: 2_000_000 },
   );
   assert.doesNotMatch(output, /### Error/);
-  assert.match(output, /"passed":35/);
+  assert.match(output, /"passed":38/);
   console.log(output.slice(0, output.indexOf('### Ran Playwright code')));
 }

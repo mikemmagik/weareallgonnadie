@@ -23,28 +23,31 @@ Unknown input fields are rejected, including nested metadata and server-owned fi
 
 ## Post schema
 
-| Field            | Type           | Rules                                                                                          |
-| ---------------- | -------------- | ---------------------------------------------------------------------------------------------- |
-| `id`             | string         | Server-generated lowercase UUID v4; immutable                                                  |
-| `url`            | string or null | Original absolute HTTP(S) URL; required for news/video/meme, nullable for changelog            |
-| `canonical_url`  | string or null | Input hint; backend normalizes this or original URL for deduplication; null for URL-less posts |
-| `source_item_id` | string or null | Stable ID within the exact source namespace; max 256 characters                                |
-| `title`          | string         | Non-empty text, max 300 characters                                                             |
-| `source`         | string         | Non-empty stable source label/namespace, max 100 characters; case-sensitive                    |
-| `type`           | enum           | `news`, `video`, `meme`, `changelog`                                                           |
-| `origin`         | enum           | `auto`, `telegram`; provenance, never authorization                                            |
-| `preview`        | object or null | `{image_url: string, alt_text: string or null}`                                                |
-| `embed`          | object or null | Provider metadata or fallback link below                                                       |
-| `body`           | string or null | Plain text/Markdown, max 100,000 characters; non-empty for changelog                           |
-| `references`     | array          | Up to 100 `{url: string, title: string or null}` objects                                       |
-| `published_at`   | string         | Server insertion time, immutable UTC `YYYY-MM-DDTHH:mm:ss.sssZ`                                |
-| `deleted_at`     | string or null | Server UTC soft-deletion time; null while visible                                              |
+| Field            | Type           | Rules                                                                                                                          |
+| ---------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `id`             | string         | Server-generated lowercase UUID v4; immutable                                                                                  |
+| `url`            | string or null | Original absolute HTTP(S) URL; required for video/meme and ordinary news, nullable for changelog and constrained URL-less news |
+| `canonical_url`  | string or null | Input hint; backend normalizes this or original URL for deduplication; null for URL-less posts                                 |
+| `source_item_id` | string or null | Stable ID within the exact source namespace; max 256 characters; required for URL-less news                                    |
+| `title`          | string         | Non-empty text, max 300 characters                                                                                             |
+| `source`         | string         | Non-empty stable source label/namespace, max 100 characters; case-sensitive                                                    |
+| `type`           | enum           | `news`, `video`, `meme`, `changelog`                                                                                           |
+| `origin`         | enum           | `auto`, `telegram`; provenance, never authorization                                                                            |
+| `preview`        | object or null | `{image_url: string, alt_text: string or null}`                                                                                |
+| `embed`          | object or null | Provider metadata or fallback link below                                                                                       |
+| `body`           | string or null | Plain text/Markdown, max 100,000 characters; non-empty for changelog                                                           |
+| `references`     | array          | Up to 100 `{url: string, title: string or null}` objects                                                                       |
+| `published_at`   | string         | Server insertion time, immutable UTC `YYYY-MM-DDTHH:mm:ss.sssZ`                                                                |
+| `deleted_at`     | string or null | Server UTC soft-deletion time; null while visible                                                                              |
 
 Regular content aggregates a source and requires a valid original URL even when
-an embed is supplied. Changelogs require their own non-whitespace body, may have no
-external URL, and can cite source references. `canonical_url` must be null when `url`
-is null. Source publication dates do not control feed ordering. Clients cannot set
-`id`, `published_at` or `deleted_at`.
+an embed is supplied. The sole exception is a source-identified text news bulletin
+that has no public URL yet: it must set `url`, `canonical_url`, `preview`, and `embed`
+to `null`, and must provide a non-empty `body` and non-null `source_item_id`.
+Changelogs require their own non-whitespace body, may have no external URL, and can
+cite source references. `canonical_url` must be null when `url` is null. Source
+publication dates do not control feed ordering. Clients cannot set `id`,
+`published_at` or `deleted_at`.
 
 All URL fields accept only absolute HTTP(S) URLs, max 2,048 characters, without
 embedded credentials or surrounding whitespace. Other text fields require at least
@@ -237,6 +240,24 @@ Example URL-less changelog input:
 }
 ```
 
+Example URL-less news input (only for a text bulletin with a stable source item ID):
+
+```json
+{
+  "url": null,
+  "canonical_url": null,
+  "source_item_id": "bulletin:2026-10-19:outage",
+  "title": "The robots have misplaced Tuesday",
+  "source": "Example News",
+  "type": "news",
+  "origin": "auto",
+  "preview": null,
+  "embed": null,
+  "body": "No original link is available yet. We are monitoring the situation.",
+  "references": []
+}
+```
+
 ### Duplicate detection is a successful submission
 
 Normalize `canonical_url ?? url` with the standard URL parser, lowercase host/scheme,
@@ -295,8 +316,9 @@ content, origin, insertion time or deletion state. Example response:
 A soft-deleted match also returns a duplicate with its original non-null deleted_at
 and does not resurrect content. This tombstone response is available only to an
 authenticated writer. Automation marks duplicates as processed and does not retry
-them as failures. URL-less changelogs should use a stable monthly source_item_id;
-without either duplicate key repeated submissions cannot be recognized as duplicates.
+them as failures. URL-less news must use its required stable source_item_id;
+URL-less changelogs should also use a stable monthly source_item_id. Without either
+duplicate key repeated submissions cannot be recognized as duplicates.
 
 A failed submission has `ok: false` and an appropriate 4xx/5xx error. No successful
 publication is implied. Automation retries transport failures and `408`, `429`,

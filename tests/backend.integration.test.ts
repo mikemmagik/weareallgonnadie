@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { copyFile, mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -53,30 +53,31 @@ test(
     const persist = join(directory, 'state');
     const config = join(directory, 'wrangler.json');
     await mkdir(join(directory, 'assets'));
-    await writeFile(
-      config,
-      JSON.stringify({
-        name: 'waagd-backend-local-test',
-        main: join(root, 'worker/index.ts'),
-        compatibility_date: '2026-10-12',
-        workers_dev: false,
-        assets: {
-          directory: join(root, 'dist'),
-          binding: 'ASSETS',
-          run_worker_first: ['/api', '/api/*', '/embed/reddit'],
-        },
-        d1_databases: [
-          {
-            binding: 'DB',
-            database_name: 'waagd-local',
-            database_id: '00000000-0000-0000-0000-000000000000',
-            migrations_dir: join(root, 'db/migrations'),
-            remote: false,
+    const writeConfig = (migrationsDir: string) =>
+      writeFile(
+        config,
+        JSON.stringify({
+          name: 'waagd-backend-local-test',
+          main: join(root, 'worker/index.ts'),
+          compatibility_date: '2026-10-12',
+          workers_dev: false,
+          assets: {
+            directory: join(root, 'dist'),
+            binding: 'ASSETS',
+            run_worker_first: ['/api', '/api/*', '/embed/reddit'],
           },
-        ],
-        vars: { API_WRITE_TOKEN: 'integration-test-only' },
-      }),
-    );
+          d1_databases: [
+            {
+              binding: 'DB',
+              database_name: 'waagd-local',
+              database_id: '00000000-0000-0000-0000-000000000000',
+              migrations_dir: migrationsDir,
+              remote: false,
+            },
+          ],
+          vars: { API_WRITE_TOKEN: 'integration-test-only' },
+        }),
+      );
     const { getPlatformProxy, unstable_dev } = await import('wrangler');
     let proxy:
       | Awaited<ReturnType<typeof getPlatformProxy<{ DB: D1Database }>>>
@@ -100,7 +101,39 @@ test(
           ],
           { cwd: root, encoding: 'utf8', env: { ...process.env, CI: 'true' } },
         );
+      const legacyMigrations = join(directory, 'legacy-migrations');
+      await mkdir(legacyMigrations);
+      await copyFile(
+        join(root, 'db/migrations/0001_posts.sql'),
+        join(legacyMigrations, '0001_posts.sql'),
+      );
+      await writeConfig(legacyMigrations);
       assert.match(migrate(), /0001_posts.sql/);
+      proxy = await getPlatformProxy<{ DB: D1Database }>({
+        configPath: config,
+        persist: { path: join(persist, 'v3') },
+        remoteBindings: false,
+        envFiles: [],
+      });
+      const legacyId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+      const legacyTimestamp = '2026-10-01T00:00:00.000Z';
+      await proxy.env.DB.prepare(
+        `INSERT INTO posts (id, type, url, canonical_url, source_item_id, title, source, origin, preview, embed, body, "references", published_at, deleted_at)
+         VALUES (?, 'news', ?, ?, ?, 'Legacy row', 'Legacy importer', 'auto', NULL, NULL, NULL, '[]', ?, ?)`,
+      )
+        .bind(
+          legacyId,
+          'https://example.com/legacy',
+          'https://example.com/legacy',
+          'legacy-1',
+          legacyTimestamp,
+          legacyTimestamp,
+        )
+        .run();
+      await proxy.dispose();
+      proxy = undefined;
+      await writeConfig(join(root, 'db/migrations'));
+      assert.match(migrate(), /0002_url_less_news.sql/);
       assert.match(migrate(), /No migrations to apply/);
       proxy = await getPlatformProxy<{ DB: D1Database }>({
         configPath: config,
@@ -109,6 +142,33 @@ test(
         envFiles: [],
       });
       const db = proxy.env.DB;
+      assert.deepEqual(
+        await db
+          .prepare(
+            'SELECT id, url, canonical_url, source_item_id, deleted_at FROM posts WHERE id = ?',
+          )
+          .bind(legacyId)
+          .first(),
+        {
+          id: legacyId,
+          url: 'https://example.com/legacy',
+          canonical_url: 'https://example.com/legacy',
+          source_item_id: 'legacy-1',
+          deleted_at: legacyTimestamp,
+        },
+      );
+      await assert.rejects(
+        db
+          .prepare('UPDATE posts SET source_item_id = ? WHERE id = ?')
+          .bind('changed', legacyId)
+          .run(),
+      );
+      await assert.rejects(
+        db
+          .prepare('UPDATE posts SET deleted_at = NULL WHERE id = ?')
+          .bind(legacyId)
+          .run(),
+      );
       server = await unstable_dev(join(root, 'worker/index.ts'), {
         config,
         local: true,
@@ -787,7 +847,7 @@ test(
             await db
               .prepare('SELECT COUNT(*) AS count FROM d1_migrations')
               .first<number>('count'),
-            1,
+            2,
           );
           await assert.rejects(
             db
@@ -1039,7 +1099,7 @@ test(
       );
       await reset();
       await t.test(
-        'URL-less changelogs, all content kinds and provider metadata round-trip',
+        'URL-less changelogs/news, all content kinds and provider metadata round-trip',
         async () => {
           const changelog: CreatePostInput = {
             ...fixture,
@@ -1053,6 +1113,20 @@ test(
           assert.equal(created.status, 201);
           assert.equal(created.data.post.canonical_url, null);
           assert.equal((await create(changelog)).status, 200);
+          const bulletin: CreatePostInput = {
+            ...fixture,
+            type: 'news',
+            url: null,
+            canonical_url: null,
+            source_item_id: 'bulletin:2026-10-19:outage',
+            preview: null,
+            embed: null,
+            body: 'No public link is available yet.',
+          };
+          const bulletinCreated = await create(bulletin);
+          assert.equal(bulletinCreated.status, 201);
+          assert.equal(bulletinCreated.data.post.canonical_url, null);
+          assert.equal((await create(bulletin)).status, 200);
           for (const type of ['video', 'meme'] as const) {
             const input: CreatePostInput = {
               ...fixture,
@@ -1180,11 +1254,51 @@ test(
       );
       await reset();
       await t.test(
-        'automation and mocked Telegram publish against real local Worker/D1',
+        'Sprint 6 intents and owner Telegram reach real local Worker/D1',
         async () => {
           const publisher = new Publisher(
             new Api(base, 'integration-test-only'),
             new State(join(directory, 'automation-state')),
+          );
+          const discoveryIntent = {
+            version: 1 as const,
+            intent_id: 'discovery-synthetic-20261019',
+            origin: 'auto' as const,
+            authorization: {
+              kind: 'discovery' as const,
+              approved: true as const,
+            },
+            post: {
+              ...fixture,
+              origin: 'auto' as const,
+              url: 'https://example.com/discovery-editorial',
+              source_item_id: 'discovery-editorial-1',
+              title: 'A verified editorial headline',
+              body: 'A full synthetic editorial article with source attribution.',
+              references: [
+                {
+                  url: 'https://example.com/discovery-editorial',
+                  title: 'Verified source',
+                },
+              ],
+            },
+          };
+          const discoveryResult = await publisher.submitIntent(
+            discoveryIntent,
+            publisher.authority('auto'),
+          );
+          assert.equal(discoveryResult.outcome, 'created');
+          assert.equal(
+            (await api<Post>(`/${discoveryResult.post.id}`)).data.body,
+            discoveryIntent.post.body,
+          );
+          await publisher.setPaused('auto', true);
+          await assert.rejects(
+            publisher.submitIntent(
+              { ...discoveryIntent, intent_id: 'discovery-paused-20261019' },
+              publisher.authority('auto'),
+            ),
+            /paused/,
           );
           const input = {
             ...fixture,
@@ -1194,10 +1308,12 @@ test(
           assert.equal((await publisher.submit(input)).outcome, 'created');
           assert.equal((await publisher.submit(input)).outcome, 'duplicate');
           const update = {
+            update_id: 5,
             message: {
+              message_id: 5,
               from: { id: 123, is_bot: false },
               chat: { id: 123, type: 'private' },
-              text: 'https://example.com/manual?utm_source=telegram',
+              text: 'An owner text bulletin without a source URL',
             },
           };
           const metadata = async () => new Response('', { status: 403 });
@@ -1211,13 +1327,24 @@ test(
           const id = reply!.text.match(/post=([0-9a-f-]+)/)![1]!;
           const publication = (await api<Post>(`/${id}`)).data;
           assert.equal(publication.origin, 'telegram');
-          assert.equal(publication.title, 'example.com');
-          assert.equal(publication.canonical_url, 'https://example.com/manual');
-          assert.match(
-            (await handleUpdate(update, new Set(['123']), publisher, metadata))!
-              .text,
-            /^ALREADY EXISTS/,
+          assert.equal(
+            publication.title,
+            'An owner text bulletin without a source URL',
           );
+          assert.equal(publication.url, null);
+          assert.equal(
+            publication.body,
+            'An owner text bulletin without a source URL',
+          );
+          assert.equal(publication.canonical_url, null);
+          const redelivery = await handleUpdate(
+            update,
+            new Set(['123']),
+            publisher,
+            metadata,
+          );
+          assert.match(redelivery!.text, /^PUBLISHED/);
+          assert.match(redelivery!.text, new RegExp(id));
           const denied = await api(`/${id}`, { method: 'DELETE' });
           assert.equal(denied.status, 401);
           const deletion = await handleUpdate(
@@ -1230,13 +1357,6 @@ test(
           );
           assert.match(deletion!.text, /^DELETED/);
           assert.equal((await api(`/${id}`)).status, 404);
-          const tombstone = await handleUpdate(
-            update,
-            new Set(['123']),
-            publisher,
-            metadata,
-          );
-          assert.match(tombstone!.text, /remains deleted/);
           const discovery = await runDiscovery(
             publisher,
             { run: async () => ({ selected: [] }) },
@@ -1263,9 +1383,17 @@ test(
                 const ids = (data as { posts: { id: string }[] }).posts.map(
                   (p) => p.id,
                 );
-                assert.deepEqual(ids, [(await publisher.api.posts())[0]!.id]);
+                assert.deepEqual(
+                  ids,
+                  (await publisher.api.posts()).map((post) => post.id),
+                );
                 return {
-                  body: `[ADDED] [post:${ids[0]}] ${'Supported satire '.repeat(80)}`,
+                  body: ids
+                    .map(
+                      (id) =>
+                        `[ADDED] [post:${id}] ${'Supported satire '.repeat(38)}`,
+                    )
+                    .join('\n'),
                   publication_ids: ids,
                 };
               },

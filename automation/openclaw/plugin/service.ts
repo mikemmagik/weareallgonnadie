@@ -17,6 +17,10 @@ export default function register(api: PluginApi): void {
     id: 'waagd-telegram-poller',
     start() {
       if (child) return;
+      // The original polling adapter is retained only for an explicit,
+      // single-owner compatibility test. Existing OpenClaw delivery must call
+      // TelegramSubmissionAdapter directly and must not compete for updates.
+      if (process.env.WAAGD_ENABLE_LEGACY_TELEGRAM_POLLER !== 'true') return;
       // No code or credentials are executed/read at plugin import/registration time.
       child = spawn(
         process.execPath,

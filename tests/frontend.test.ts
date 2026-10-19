@@ -8,6 +8,7 @@ import {
   parsePage,
 } from '../src/lib/feed.ts';
 import {
+  articleBlocks,
   changelogBlocks,
   playerFor,
   previewFor,
@@ -284,6 +285,12 @@ test('allowlisted players load without autoplay and reject mismatched provider I
   }
 });
 test('changelog text stays inert, external links reject executable URLs, relative dates remain readable', () => {
+  assert.deepEqual(
+    articleBlocks(
+      'First paragraph\r\nwith a line break.\r\n\r\n  <script>alert(1)</script>  \r\n',
+    ),
+    ['First paragraph\nwith a line break.', '<script>alert(1)</script>'],
+  );
   assert.deepEqual(
     changelogBlocks(
       '[ADDED]\n- New risks\n## FIXED\n<script>alert(1)</script>',

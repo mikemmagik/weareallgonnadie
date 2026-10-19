@@ -297,6 +297,20 @@ dd {
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
+.article-body {
+  margin-top: 11px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.article-paragraph {
+  margin: 0 0 14px;
+  white-space: pre-wrap;
+}
+.article-paragraph:last-child {
+  margin-bottom: 0;
+}
 .post-source {
   display: flex;
   align-items: center;

@@ -93,6 +93,19 @@ export interface TextBlock {
   kind: 'heading' | 'item' | 'paragraph';
   text: string;
 }
+
+/**
+ * Split an article into readable plain-text paragraphs. Rendering keeps these
+ * strings as text nodes, so supplied markup never becomes page content.
+ */
+export function articleBlocks(body: string): string[] {
+  return body
+    .replace(/\r\n?/g, '\n')
+    .split(/\n[\t ]*\n+/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+}
+
 /** Small readable plain-text/Markdown subset, with no HTML or inline execution. */
 export function changelogBlocks(body: string): TextBlock[] {
   return body

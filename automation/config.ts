@@ -38,6 +38,9 @@ export function configuration(env: NodeJS.ProcessEnv = process.env) {
     agent: env.WAAGD_OPENCLAW_AGENT ?? 'waagd',
     openclaw: env.WAAGD_OPENCLAW_BIN ?? 'openclaw',
     timezone,
+    legacyDailyEnabled: env.WAAGD_ENABLE_LEGACY_DAILY === 'true',
+    legacyTelegramPollerEnabled:
+      env.WAAGD_ENABLE_LEGACY_TELEGRAM_POLLER === 'true',
   };
 }
 export async function loadSources(path?: string): Promise<Source[]> {

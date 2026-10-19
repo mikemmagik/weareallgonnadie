@@ -16,7 +16,14 @@ import type {
   CreatePostResult,
 } from '../../shared/contracts.ts';
 import { validateCreatePostInput } from '../../shared/contracts.ts';
-import { record } from './api.ts';
+import type { PublicationAuthority, PublicationIntent } from './intent.ts';
+import {
+  createPublicationAuthority,
+  hasPublicationAuthority,
+  mapPublicationIntent,
+  validatePublicationIntent,
+} from './intent.ts';
+import { parsePost, record } from './api.ts';
 import type { Api } from './api.ts';
 import { RequestFailure } from './http.ts';
 
@@ -175,9 +182,128 @@ export function payloadKey(payload: CreatePostInput): string {
 export class Publisher {
   api: Api;
   state: State;
+  private readonly authorities = {
+    auto: createPublicationAuthority('auto'),
+    telegram: createPublicationAuthority('telegram'),
+  };
   constructor(api: Api, state: State) {
     this.api = api;
     this.state = state;
+  }
+  /** Only authenticated local adapters receive this non-serializable capability. */
+  authority(origin: 'auto' | 'telegram'): PublicationAuthority {
+    return this.authorities[origin];
+  }
+  private async publicationPolicy(): Promise<{
+    auto_paused: boolean;
+    telegram_paused: boolean;
+  }> {
+    const saved = await this.state.read('publication-policy.json');
+    if (saved === null) return { auto_paused: false, telegram_paused: false };
+    const value = record(saved);
+    if (
+      Object.keys(value).some(
+        (key) => key !== 'auto_paused' && key !== 'telegram_paused',
+      ) ||
+      typeof value.auto_paused !== 'boolean' ||
+      typeof value.telegram_paused !== 'boolean'
+    )
+      throw new StateError('Invalid publication policy state.');
+    return {
+      auto_paused: value.auto_paused,
+      telegram_paused: value.telegram_paused,
+    };
+  }
+  async isPaused(origin: 'auto' | 'telegram'): Promise<boolean> {
+    const policy = await this.publicationPolicy();
+    return origin === 'auto' ? policy.auto_paused : policy.telegram_paused;
+  }
+  async setPaused(origin: 'auto' | 'telegram', paused: boolean): Promise<void> {
+    await this.state.locked('publication-policy', async () => {
+      const policy = await this.publicationPolicy();
+      await this.state.write('publication-policy.json', {
+        ...policy,
+        ...(origin === 'auto'
+          ? { auto_paused: paused }
+          : { telegram_paused: paused }),
+      });
+    });
+  }
+  /**
+   * Submit a trusted producer envelope. A successful receipt is durable and makes
+   * redelivering the same intent independent from API/outbox timing.
+   */
+  async submitIntent(
+    intent: PublicationIntent,
+    authority: PublicationAuthority,
+  ): Promise<CreatePostResult> {
+    const checked = validatePublicationIntent(intent);
+    if (!checked.valid) throw new Error('Invalid publication intent.');
+    if (!hasPublicationAuthority(authority, checked.value.origin))
+      throw new Error('Untrusted publication authority.');
+    if (await this.isPaused(checked.value.origin))
+      throw new Error(
+        checked.value.origin === 'auto'
+          ? 'Automatic publication is paused.'
+          : 'Telegram publication is paused.',
+      );
+    const receiptName = `receipt-${checked.value.intent_id}.json`;
+    return this.state.locked(`intent-${checked.value.intent_id}`, async () => {
+      const prior = await this.state.read(receiptName);
+      if (prior !== null) {
+        const saved = record(prior);
+        if (
+          saved.intent_id !== checked.value.intent_id ||
+          saved.origin !== checked.value.origin
+        )
+          throw new StateError('Publication receipt identity mismatch.');
+        if (saved.result !== undefined) {
+          const result = record(saved.result);
+          const post = parsePost(result.post);
+          if (result.outcome === 'created') return { outcome: 'created', post };
+          if (
+            result.outcome === 'duplicate' &&
+            (result.matched_by === 'canonical_url' ||
+              result.matched_by === 'source_item_id')
+          )
+            return {
+              outcome: 'duplicate',
+              matched_by: result.matched_by,
+              post,
+            };
+          throw new StateError('Invalid completed publication receipt.');
+        }
+      }
+      const payload = mapPublicationIntent(checked.value);
+      await this.state.write(receiptName, {
+        intent_id: checked.value.intent_id,
+        origin: checked.value.origin,
+        status: 'accepted',
+        accepted_at: new Date().toISOString(),
+      });
+      try {
+        const result = await this.submit(payload);
+        await this.state.write(receiptName, {
+          intent_id: checked.value.intent_id,
+          origin: checked.value.origin,
+          status: 'published',
+          published_at: new Date().toISOString(),
+          result,
+        });
+        return result;
+      } catch (error) {
+        const queued =
+          (await this.state.read(`outgoing-${payloadKey(payload)}.json`)) !==
+          null;
+        await this.state.write(receiptName, {
+          intent_id: checked.value.intent_id,
+          origin: checked.value.origin,
+          status: queued ? 'queued' : 'failed',
+          updated_at: new Date().toISOString(),
+        });
+        throw error;
+      }
+    });
   }
   async submit(payload: CreatePostInput): Promise<CreatePostResult> {
     return this.state.locked(`outgoing-${payloadKey(payload)}`, async () => {
