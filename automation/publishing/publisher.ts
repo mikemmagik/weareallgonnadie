@@ -21,6 +21,17 @@ import type { State } from '../core/state.ts';
 export type PublicationMode = 'verified_auto' | 'owner_command';
 
 /** Construct only in a trusted process; no field in this object grants authority. */
+export interface PublicationProvenance {
+  origin: 'waagd-discovery';
+  deliveryId: string;
+  verificationStatus: 'VERIFIED';
+  editorialStatus: 'READY_FOR_REVIEW';
+  publisher: string;
+  publishedAtSource: string;
+  risks: Array<{ code: string; severity: 'low' | 'medium' }>;
+  publicationPolicyVersion: string;
+}
+
 export interface PublicationIntent {
   identity: string;
   mode: PublicationMode;
@@ -30,6 +41,8 @@ export interface PublicationIntent {
   sourceUrl: string | null;
   contentDigest: string;
   payload: CreatePostInput;
+  /** Persisted audit metadata for data-only Discovery hand-offs. */
+  provenance?: PublicationProvenance;
 }
 
 export interface PublicationReceipt {
@@ -129,6 +142,53 @@ export function stableSourceItemId(identity: string): string {
   return `waagd:${createHash('sha256').update(identity).digest('hex')}`;
 }
 
+function checkProvenance(value: PublicationProvenance | undefined): boolean {
+  if (value === undefined) return true;
+  return (
+    value.origin === 'waagd-discovery' &&
+    UUID.test(value.deliveryId) &&
+    value.verificationStatus === 'VERIFIED' &&
+    value.editorialStatus === 'READY_FOR_REVIEW' &&
+    typeof value.publisher === 'string' &&
+    value.publisher.length > 0 &&
+    value.publisher.length <= 100 &&
+    typeof value.publishedAtSource === 'string' &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(
+      value.publishedAtSource,
+    ) &&
+    Number.isFinite(new Date(value.publishedAtSource).getTime()) &&
+    /^[A-Za-z0-9._:-]{1,128}$/.test(value.publicationPolicyVersion) &&
+    Array.isArray(value.risks) &&
+    value.risks.length <= 32 &&
+    value.risks.every(
+      (risk) =>
+        risk &&
+        typeof risk.code === 'string' &&
+        risk.code.length > 0 &&
+        risk.code.length <= 128 &&
+        ['low', 'medium'].includes(risk.severity),
+    ) &&
+    new Set(value.risks.map((risk) => risk.code)).size === value.risks.length
+  );
+}
+
+/** Delivery metadata is deliberately excluded: a redelivery is not new content. */
+function samePublicationContent(
+  left: PublicationIntent,
+  right: PublicationIntent,
+): boolean {
+  return (
+    left.identity === right.identity &&
+    left.mode === right.mode &&
+    left.candidateKey === right.candidateKey &&
+    left.decisionRevision === right.decisionRevision &&
+    canonical(left.evidenceIds) === canonical(right.evidenceIds) &&
+    left.sourceUrl === right.sourceUrl &&
+    left.contentDigest === right.contentDigest &&
+    canonical(left.payload) === canonical(right.payload)
+  );
+}
+
 function checkIntent(intent: PublicationIntent): void {
   if (
     !intent ||
@@ -145,6 +205,7 @@ function checkIntent(intent: PublicationIntent): void {
       (id) => typeof id !== 'string' || !SHA256.test(id),
     ) ||
     !SHA256.test(intent.contentDigest) ||
+    !checkProvenance(intent.provenance) ||
     !validateCreatePostInput(intent.payload).valid ||
     Buffer.byteLength(JSON.stringify(intent.payload), 'utf8') >
       CONTENT_LIMITS.request_bytes ||
@@ -313,11 +374,7 @@ export class JournalPublisher {
               receipt: null,
             }
           : readJournal(prior);
-      if (
-        journal.intent.identity !== intent.identity ||
-        journal.intent.contentDigest !== intent.contentDigest ||
-        canonical(journal.intent) !== canonical(intent)
-      )
+      if (!samePublicationContent(journal.intent, intent))
         throw new PublicationError('identity_conflict');
       if (journal.status === 'published') {
         const receipt = journal.receipt!;

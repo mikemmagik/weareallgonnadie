@@ -3,9 +3,10 @@
 The website automation accepts one fixed private state file,
 `publication-intents.json`, from WAAGD Discovery. Run
 `node --env-file=/absolute/private/site.env automation/cli.ts publish-import`.
-The parser accepts only the versioned discovery envelope, up to 100 verified-auto
-intents, and recomputes each digest before the bearer-token journal can make a
-request. Re-running it is safe: published journal identities return the same result
+The parser accepts only the common [PublicationIntent v1](../automation/publishing/PUBLICATION_INTENT_V1.md) batch, up to 100 verified-auto
+intents, and recomputes each `content_hash` before the bearer-token journal can make a
+request. The intent's authorization assertion is audit data; the local trusted
+authorizer is still mandatory. Re-running it is safe: published journal identities return the same result
 without a second POST.
 
 `WAAGD_SPRINT6_PUBLISHING_ENABLED` defaults to `0`; set it to `1` only for the
