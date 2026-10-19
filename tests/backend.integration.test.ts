@@ -1344,10 +1344,11 @@ test(
               message_id: 5,
               from: { id: 123, is_bot: false },
               chat: { id: 123, type: 'private' },
-              text: 'An owner text bulletin without a source URL',
+              text: 'https://example.com/owner-submission',
             },
           };
-          const metadata = async () => new Response('', { status: 403 });
+          const metadata = async () =>
+            new Response('', { headers: { 'content-type': 'text/html' } });
           const reply = await handleUpdate(
             update,
             new Set(['123']),
@@ -1358,16 +1359,13 @@ test(
           const id = reply!.text.match(/post=([0-9a-f-]+)/)![1]!;
           const publication = (await api<Post>(`/${id}`)).data;
           assert.equal(publication.origin, 'telegram');
+          assert.equal(publication.title, 'example.com');
+          assert.equal(publication.url, 'https://example.com/owner-submission');
+          assert.equal(publication.body, null);
           assert.equal(
-            publication.title,
-            'An owner text bulletin without a source URL',
+            publication.canonical_url,
+            'https://example.com/owner-submission',
           );
-          assert.equal(publication.url, null);
-          assert.equal(
-            publication.body,
-            'An owner text bulletin without a source URL',
-          );
-          assert.equal(publication.canonical_url, null);
           const redelivery = await handleUpdate(
             update,
             new Set(['123']),
@@ -1454,7 +1452,7 @@ test(
       );
       await reset();
       await t.test(
-        'actual Discovery 17f59e3 producer enters the core ingress once and reaches Worker/D1 and frontend parser',
+        'actual final Discovery f1c7766 producer enters the core ingress once and reaches Worker/D1 and frontend parser',
         { skip: !process.env.WAAGD_DISCOVERY_ROOT },
         async () => {
           const discoveryRoot = process.env.WAAGD_DISCOVERY_ROOT!;
@@ -1478,7 +1476,7 @@ test(
               if (init?.method === 'POST') publicationPosts++;
               return fetch(url, init);
             }),
-            new State(join(directory, 'discovery-17f59e3-state')),
+            new State(join(directory, 'discovery-f1c7766-state')),
             { discoveryIngressToken: 'discovery-ingress-test-token' },
           );
           await publisher.setPaused('auto', false);

@@ -21,13 +21,13 @@ staging, DNS, bot, Cloudflare Access, R2, or OpenClaw runtime was changed.
 | The existing Telegram implementation owns a Bot API `getUpdates` poller.                                                                                                        | Do not run or auto-enable it for `@waagd_bot`. Use a pure adapter invoked by the existing OpenClaw inbound path.                                                                       |
 | `CreatePostInput` previously required an URL for ordinary news.                                                                                                                 | A forward D1 migration and shared-contract extension allow only a source-identified, non-empty text-news bulletin without a URL.                                                       |
 | Normal post body was visually clamped to a preview.                                                                                                                             | Regular news now renders full escaped text paragraphs; it does not turn Markdown/HTML into executable markup.                                                                          |
-| Native Telegram files have no approved storage path.                                                                                                                            | Return an explicit unsupported-media outcome until an approved R2 design and deployment exist.                                                                                         |
+| Native Telegram files are outside the URL-submission product scope.                                                                                                             | Return an explicit unsupported-media outcome; no R2 design, binding, upload endpoint, or media store is planned.                                                                       |
 
 ## Coordinated contract decision
 
-Sprint 6 explicitly authorizes the smallest shared-contract expansion required for
-owner text messages. `type: "news"` may have `url: null` only when all of these are
-true:
+Sprint 6 retains a shared-contract expansion for existing source-identified text
+bulletins. The Telegram owner workflow does not use it: Telegram submissions require
+public URLs. `type: "news"` may have `url: null` only when all of these are true:
 
 - `canonical_url`, `preview`, and `embed` are `null`;
 - `body` is non-empty;

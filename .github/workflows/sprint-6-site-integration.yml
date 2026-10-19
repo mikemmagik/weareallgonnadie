@@ -35,7 +35,7 @@ jobs:
       - name: Check out Discovery producer outside the site workspace
         run: |
           git clone --no-checkout https://github.com/mikemmagik/waagd-discovery.git "$RUNNER_TEMP/waagd-discovery"
-          git -C "$RUNNER_TEMP/waagd-discovery" checkout --detach 17f59e316751079c030bf85abbe75dbbc0a4e562
+          git -C "$RUNNER_TEMP/waagd-discovery" checkout --detach f1c77662b32983d2f2732bf311e699f899a0ce6c
       - name: Install the pinned Discovery producer
         working-directory: ${{ runner.temp }}/waagd-discovery
         run: python -m pip install --disable-pip-version-check .

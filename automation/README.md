@@ -11,7 +11,7 @@ remains a terminal error for compatibility; integrated routes no longer return i
 
 ## Workflows
 
-- **Telegram:** one public HTTP(S) URL per private message from an allowlisted
+- **Telegram:** one or more public HTTP(S) URLs per private message from an allowlisted
   numeric user ID. Technical validation, normalization, public metadata, provider
   detection and authenticated POST only: no editorial scoring or AI call. Replies
   are PUBLISHED, ALREADY EXISTS or FAILED, with site URL and UUID on success.
@@ -64,8 +64,7 @@ or the service owner's environment injection.
 | `WAAGD_API_ORIGIN`           | All commands            | HTTPS site origin; loopback HTTP allowed locally             |
 | `WAAGD_API_WRITE_TOKEN`      | All commands            | API bearer secret; never sent on public GET                  |
 | `WAAGD_STATE_DIR`            | All commands            | Absolute private state directory outside repo                |
-| `WAAGD_TELEGRAM_BOT_TOKEN`   | Telegram                | Separate bot secret, supplied later by owner                 |
-| `WAAGD_TELEGRAM_ALLOWED_IDS` | Telegram                | Comma-separated numeric user IDs; empty denies all           |
+| `WAAGD_TELEGRAM_ALLOWED_IDS` | Existing ingress        | Comma-separated numeric owner IDs; empty denies all          |
 | `WAAGD_OPENCLAW_AGENT`       | Daily/monthly           | Dedicated agent; default `waagd`                             |
 | `WAAGD_OPENCLAW_BIN`         | Daily/monthly           | Existing executable, preferably absolute; default `openclaw` |
 | `WAAGD_TIMEZONE`             | Monthly                 | IANA timezone, default `Asia/Bangkok`; match schedule        |
@@ -74,16 +73,17 @@ or the service owner's environment injection.
 With the local or deployed API and a privately supplied environment:
 
 ```sh
-node --env-file=/absolute/private/waagd.env automation/cli.ts telegram
 node --env-file=/absolute/private/waagd.env automation/cli.ts daily
 node --env-file=/absolute/private/waagd.env automation/cli.ts monthly
 node --env-file=/absolute/private/waagd.env automation/cli.ts monthly 2026-09
 node --env-file=/absolute/private/waagd.env automation/cli.ts retry
 ```
 
-Telegram runs until signalled or five consecutive polling cycles fail. Other commands
-are one-shot. JSON stdout reports daily results, including partial failures; a run
-that cannot proceed exits nonzero. Errors exclude upstream text, credentials and bodies.
+The existing OpenClaw ingress calls the pure Telegram adapter directly; it does not
+run this CLI. The guarded `telegram` CLI command is legacy compatibility only and
+must not be used for `@waagd_bot`. Other commands are one-shot. JSON stdout reports
+daily results, including partial failures; a run that cannot proceed exits nonzero.
+Errors exclude upstream text, credentials and bodies.
 
 ## Sources
 

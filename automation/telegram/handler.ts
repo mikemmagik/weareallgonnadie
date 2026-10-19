@@ -101,22 +101,29 @@ function ownerMessage(
   };
 }
 
-function intentId(message: OwnerMessage): string {
-  return `telegram-${digest(`update:${message.updateId}:message:${message.messageId}`)}`;
+function intentId(message: OwnerMessage, submission: number): string {
+  return `telegram-${digest(`update:${message.updateId}:message:${message.messageId}:submission:${submission}`)}`;
 }
 
-function splitSubmission(
-  text: string,
-):
-  | { kind: 'url'; url: string; comment: string | null }
-  | { kind: 'text'; text: string } {
-  const urls = text.match(/https?:\/\/[^\s]+/gi) ?? [];
-  if (urls.length === 1) {
-    const url = urls[0]!;
-    const comment = text.replace(url, '').trim();
-    return { kind: 'url', url, comment: comment || null };
+/**
+ * One owner event may contain several independent public URLs. Keep their
+ * original order, but ignore repeated copies of the exact same URL so a pasted
+ * duplicate cannot create extra work within one durable Telegram event.
+ */
+function submissionUrls(text: string): string[] {
+  const unique = new Set<string>();
+  for (const match of text.match(/https?:\/\/[^\s]+/gi) ?? []) {
+    if (unique.size >= 10) throw new Error('Send no more than 10 public URLs.');
+    unique.add(match);
   }
-  return { kind: 'text', text };
+  return [...unique];
+}
+
+function oneSubmissionUrl(text: string): string {
+  const urls = submissionUrls(text);
+  if (urls.length !== 1)
+    throw new Error('Send exactly one public URL for this command.');
+  return urls[0]!;
 }
 
 function command(text: string): { name: string; argument: string } | null {
@@ -130,10 +137,10 @@ function command(text: string): { name: string; argument: string } | null {
 
 function helpText(): string {
   return [
-    'Send one public URL to publish it directly.',
-    'Add a comment before or after the URL to publish it as the article body.',
-    '/preview <URL and optional comment> saves a draft.',
-    '/publish publishes the saved draft; /delete <publication_id> removes one.',
+    'Send one or more public URLs to publish them directly.',
+    'Each URL is processed as a separate technical submission; message text is not published.',
+    '/preview <URL> saves a legacy draft; /publish publishes that draft.',
+    '/delete <publication_id> removes one.',
     '/status, /pause auto, /resume auto. Uploaded media is not published by this adapter.',
   ].join('\n');
 }
@@ -183,38 +190,20 @@ export class TelegramSubmissionAdapter {
   private async prepareIntent(
     message: OwnerMessage,
     input: string,
+    submission = 0,
   ): Promise<PublicationIntent> {
-    const submission = splitSubmission(input);
+    const url = oneSubmissionUrl(input);
     const sourceItemId = `telegram-${digest(
-      `${message.ownerKey}:${message.updateId}:${message.messageId}`,
+      `${message.ownerKey}:${message.updateId}:${message.messageId}:${submission}`,
     )}`;
-    let post: CreatePostInput;
-    if (submission.kind === 'text') {
-      if (!submission.text) throw new Error('Send text or one public URL.');
-      post = {
-        type: 'news',
-        url: null,
-        canonical_url: null,
-        source_item_id: sourceItemId,
-        title: submission.text.replace(/\s+/g, ' ').slice(0, 300),
-        source: 'Telegram',
-        origin: 'telegram',
-        preview: null,
-        embed: null,
-        body: submission.text,
-        references: [],
-      };
-    } else {
-      post = await this.prepare(submission.url, this.http);
-      post.body = submission.comment;
-      if (post.source !== 'TikTok') {
-        post.source = 'Telegram';
-        post.source_item_id = sourceItemId;
-      }
+    const post: CreatePostInput = await this.prepare(url, this.http);
+    if (post.source !== 'TikTok') {
+      post.source = 'Telegram';
+      post.source_item_id = sourceItemId;
     }
     return withPublicationIntentContentHash({
       version: 1,
-      intent_id: intentId(message),
+      intent_id: intentId(message, submission),
       origin: 'telegram',
       authorization: {
         kind: 'telegram-owner',
@@ -278,6 +267,51 @@ export class TelegramSubmissionAdapter {
     };
   }
 
+  private async publishUrls(
+    message: OwnerMessage,
+    urls: readonly string[],
+  ): Promise<Reply> {
+    const replies: string[] = [];
+    for (const [submission, url] of urls.entries()) {
+      try {
+        const intent = await this.prepareIntent(message, url, submission);
+        const result = message.stableIdentity
+          ? await this.publisher.submitTelegramIntent(intent)
+          : await this.publisher.submit(intent.post);
+        await this.publisher.state.write(this.statusName(message), {
+          intent_id: intent.intent_id,
+          outcome: result.outcome,
+          post_id: result.post.id,
+          updated_at: new Date().toISOString(),
+        });
+        replies.push(publicationReply(this.publisher, result));
+      } catch (error) {
+        const reason =
+          error instanceof StateError
+            ? error.message
+            : error instanceof UnsafeUrlError
+              ? 'URL must target a safe public publication.'
+              : error instanceof RequestFailure &&
+                  [404, 410].includes(error.status)
+                ? `Original publication is missing (HTTP ${error.status}); nothing was published.`
+                : error instanceof Error
+                  ? error.message
+                  : 'Publication could not be completed.';
+        const saved =
+          error instanceof RequestFailure &&
+          error.retryable &&
+          ![404, 410].includes(error.status);
+        const retry = saved
+          ? ' Publication payload is saved locally for retry; exhausted retries require manual review.'
+          : error instanceof RequestFailure
+            ? ' No publication payload was saved for retry.'
+            : '';
+        replies.push(`FAILED: ${reason}${retry}`);
+      }
+    }
+    return { chatId: message.chatId, text: replies.join('\n\n') };
+  }
+
   async handle(update: unknown): Promise<Reply | null> {
     try {
       const message = ownerMessage(update, this.allowedIds);
@@ -290,7 +324,7 @@ export class TelegramSubmissionAdapter {
       if (message.text === null)
         return {
           chatId: message.chatId,
-          text: 'FAILED: Send text or one public URL.',
+          text: 'FAILED: Send one or more public URLs.',
         };
       const parsed = command(message.text);
       if (parsed) {
@@ -350,10 +384,9 @@ export class TelegramSubmissionAdapter {
           text: `FAILED: Unknown command.\n${helpText()}`,
         };
       }
-      return await this.publish(
-        message,
-        await this.prepareIntent(message, message.text),
-      );
+      const urls = submissionUrls(message.text);
+      if (!urls.length) throw new Error('Send one or more public URLs.');
+      return await this.publishUrls(message, urls);
     } catch (error) {
       let safe: OwnerMessage | null;
       try {

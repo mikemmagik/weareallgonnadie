@@ -141,6 +141,32 @@ test('manual Telegram publication preserves approval, origin, metadata and API a
     );
   }
 });
+test('one owner event publishes independent URLs once and reports each receipt', async (t) => {
+  let posts = 0;
+  const publisher = await fixture(t, async (url, init) => {
+    if (init?.method === 'POST') posts++;
+    return backend()(url, init);
+  });
+  const incoming = update('https://example.com/one https://example.org/two');
+  const metadata: Http = async () =>
+    new Response('', { headers: { 'content-type': 'text/html' } });
+  const first = await handleUpdate(
+    incoming,
+    new Set(['123']),
+    publisher,
+    metadata,
+  );
+  assert.equal((first!.text.match(/PUBLISHED/g) ?? []).length, 2);
+  assert.equal(posts, 2);
+  const replay = await handleUpdate(
+    incoming,
+    new Set(['123']),
+    publisher,
+    metadata,
+  );
+  assert.equal((replay!.text.match(/PUBLISHED/g) ?? []).length, 2);
+  assert.equal(posts, 2);
+});
 test('unauthorized, group, bot, malformed and edited updates cause no network operations', async (t) => {
   const fail: Http = async () => {
     assert.fail('No network permitted.');
@@ -206,7 +232,7 @@ test('invalid URLs and invalid deletion commands return FAILED without publicati
     'https://user:password@example.com',
     '/delete nope',
     `/delete ${ID} extra`,
-    'https://example.com https://example.org',
+    'A text bulletin without a public URL',
   ]) {
     assert.match(
       (await handleUpdate(

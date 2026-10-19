@@ -45,24 +45,21 @@ redelivery therefore returns the existing publication rather than creating anoth
 
 - `/start`, `/help`: show the supported owner workflow.
 - `/status`: show the latest durable receipt for the private owner chat.
-- `/preview`: save the next eligible submission as a draft (or show the current
-  draft, depending on the adapter response).
-- `/publish`: send the saved draft.
+- `/preview`, `/publish`: retained legacy URL-draft commands; ordinary owner URLs
+  publish immediately and never require either command.
 - `/delete <post-id>`: soft-delete through the existing authenticated API.
 - `/pause auto`, `/resume auto`: change only the automatic-publication kill switch.
 
-Direct owner messages publish without the Discovery editorial gate. A public URL,
-plain text, or URL followed by a comment is supported. Plain text becomes a `news`
-post with no source URL, a non-empty body, and an event-derived identity. URLs retain
-their original link, safe metadata handling, link card/provider behavior, and any
-comment as the body.
+Direct owner messages publish without the Discovery editorial gate. One or more
+public URLs in one owner event are independent submissions with stable event/index
+identities. Non-URL text is not a publication. URLs retain their original link,
+safe metadata handling, and link card/provider behavior; surrounding message text is
+never rewritten into an article body.
 
 For direct Telegram photo, video, or document uploads, the current release returns a
 truthful unsupported-media response and does not create a post. It never stores a
-Telegram bot-token file URL. A future R2 implementation must be separately approved
-and must validate byte limits, declared and sniffed MIME type, file signatures,
-allowlisted formats, authorization, object visibility, and duplicate identity before
-it can report success.
+Telegram bot-token file URL. Binary media storage, R2 bindings and file-processing
+pipelines are not part of this release plan.
 
 ## Discovery handoff
 
@@ -73,9 +70,8 @@ After staging acceptance of the new intent path, remove the legacy discovery col
 in a separately reviewed change while retaining generic API, retry, deduplication, and
 state modules.
 
-For a combined remote run and rollback sequence, use
-[`sprint-6-staging-acceptance.md`](sprint-6-staging-acceptance.md). It is a prepared
-runbook, not evidence that staging or the existing bot has been connected.
+The final ingress alignment guide records the local acceptance and rollback boundary;
+it is not evidence that staging or the existing bot has been connected.
 
 An accepted auto intent maps to the existing post API as follows:
 

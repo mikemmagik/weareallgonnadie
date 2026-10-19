@@ -24,7 +24,7 @@ Worker and migrated D1:
    D1 → readable post. It verifies article body/references, durable receipt behavior,
    and the auto kill switch.
 2. Authorized private Telegram event → pure adapter → trusted Publisher →
-   authenticated Worker → D1 → readable URL-less news post and confirmation. It
+   authenticated Worker → D1 → readable URL submission and confirmation. It
    verifies that auto pause does not block the owner path.
 
 The frontend build and its unit/browser fixtures separately verify that the same post
@@ -40,8 +40,8 @@ schema renders complete escaped article paragraphs in the one chronological feed
 | Network timeout/API failure/retry       | Existing bounded retry and durable outbox tests; failed submissions never claim success          |
 | Unsupported media                       | Adapter returns an explicit unsupported-media response and does not publish or expose token URLs |
 | Rollback and tombstones                 | Soft-delete and tombstone duplicate coverage; migration preserves tombstones and triggers        |
-| Automatic kill switch                   | Publisher policy and real local intent test; Telegram text remains publishable                   |
-| Text with no URL                        | Shared validator, D1 forward migration, Worker real round-trip, and Telegram adapter tests       |
+| Automatic kill switch                   | Publisher policy and real local intent test; Telegram owner URLs remain publishable              |
+| Telegram URL-only submission            | Owner URL, multi-URL, replay and non-URL rejection adapter tests                                 |
 | Full article rendering                  | Safe full-body paragraph renderer tests and static frontend build                                |
 
 ## Staging and live-service limits
@@ -59,6 +59,6 @@ staging-only credentials and the current bot owner's involvement.
   `daily` disabled.
 - Connect the existing OpenClaw ingress to `TelegramSubmissionAdapter`; do not enable
   the legacy poller or create another bot.
-- Approve an R2 design separately before accepting native Telegram file uploads.
+- Native Telegram binary uploads remain explicitly unsupported; R2 is not in scope.
 - Perform staging E2E with staging credentials, then make any deployment/DNS decision
   in a separate authorized change.

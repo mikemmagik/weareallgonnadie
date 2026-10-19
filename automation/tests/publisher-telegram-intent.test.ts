@@ -179,7 +179,7 @@ test('automatic intents fail closed, reject article type, and replay only after 
   );
 });
 
-test('Telegram text is URL-less news and remains available while auto is paused', async (t) => {
+test('Telegram owner URLs remain available while auto is paused and redelivery is idempotent', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'waagd-telegram-intent-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const submissions: unknown[] = [];
@@ -218,26 +218,53 @@ test('Telegram text is URL-less news and remains available while auto is paused'
   );
   assert.match(
     (await handleUpdate(
-      update(2, 'A short bulletin'),
+      update(2, 'https://example.com/owner-link'),
       new Set(['123']),
       publisher,
+      async () =>
+        new Response('', { headers: { 'content-type': 'text/html' } }),
     ))!.text,
     /^PUBLISHED/,
   );
   assert.deepEqual(submissions[0], {
     type: 'news',
-    url: null,
-    canonical_url: null,
+    url: 'https://example.com/owner-link',
+    canonical_url: 'https://example.com/owner-link',
     source_item_id: (submissions[0] as { source_item_id: string })
       .source_item_id,
-    title: 'A short bulletin',
+    title: 'example.com',
     source: 'Telegram',
     origin: 'telegram',
     preview: null,
-    embed: null,
-    body: 'A short bulletin',
+    embed: {
+      kind: 'link',
+      url: 'https://example.com/owner-link',
+      label: 'Open original',
+    },
+    body: null,
     references: [],
   });
+  assert.match(
+    (await handleUpdate(
+      update(2, 'https://example.com/owner-link'),
+      new Set(['123']),
+      publisher,
+      async () =>
+        new Response('', { headers: { 'content-type': 'text/html' } }),
+    ))!.text,
+    /^PUBLISHED/,
+  );
+  assert.equal(submissions.length, 1);
+  assert.match(
+    (await handleUpdate(
+      update(3, 'a plain text message'),
+      new Set(['123']),
+      publisher,
+      async () =>
+        new Response('', { headers: { 'content-type': 'text/html' } }),
+    ))!.text,
+    /^FAILED: Send one or more public URLs/,
+  );
 });
 
 test('OpenClaw ingress projection accepts only direct numeric Telegram owner events', async (t) => {
@@ -284,10 +311,12 @@ test('OpenClaw ingress projection accepts only direct numeric Telegram owner eve
         senderId: '123',
         messageId: '2',
         providerUpdate: '2',
-        content: 'Owner message through OpenClaw',
+        content: 'https://example.com/through-openclaw',
       },
       new Set(['123']),
       publisher,
+      async () =>
+        new Response('', { headers: { 'content-type': 'text/html' } }),
     ))!.text,
     /^PUBLISHED/,
   );

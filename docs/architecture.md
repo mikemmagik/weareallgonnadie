@@ -11,18 +11,17 @@ One repository and one Cloudflare project retain the approved stack:
   indexed tuple ordering, atomic uniqueness and permanent soft-deletion tombstones.
 - **Automation:** Node 24 HTTP-only clients and private local retry state. No frontend
   credentials, database access, CMS, extra server or paid AI service.
-- **OpenClaw templates:** a plugin supervises the deterministic dedicated-bot poller;
-  native command schedules invoke discovery/monthly CLI jobs using a dedicated agent
-  on the owner's existing subscription. The site does not depend on that process.
+- **OpenClaw boundary:** the existing Telegram ingress may call the pure deterministic
+  adapter for allowlisted owner URLs; it does not start a bot, poll Telegram, or make
+  an editorial AI call. The site does not depend on that process.
 
 ```text
 Reader -> Cloudflare Worker project
           |-- static assets -> Astro dist/
           |-- /api/* -> Worker -> D1
 
-Public source feeds -> local collection -> existing OpenClaw selection -> POST API
-Dedicated Telegram bot -> allowlisted human URL -> optional safe metadata -> POST API
-Monthly schedule -> all visible month publications -> existing agent -> POST API
+WAAGD Discovery -> verified editorial intent -> Publisher -> POST API
+Existing Telegram ingress -> allowlisted owner URL -> optional safe metadata -> Publisher -> POST API
 ```
 
 Worker-first routing applies to `/api`, `/api/*` and the exact `/embed/reddit` adapter; other matching assets can
@@ -63,8 +62,8 @@ The local configuration retains a sentinel DB with `remote: false`. No productio
 resources, deployment, bot registration, live OpenClaw agent changes or schedules
 were performed. OpenClaw is absent on the integration Mac per owner clarification;
 SDK/CLI compatibility is documented and mocked, not claimed as live verification.
-The plugin avoids an additional service manager; the standalone Telegram CLI is a
-manual diagnostic option and must not compete with the plugin's poller.
+The adapter never creates a polling owner. The guarded standalone Telegram CLI is
+legacy compatibility only and must not run for the existing bot.
 
 See [local setup](../README.md), [API](api.md), [deployment](deployment.md), and
 [manual OpenClaw checks](../automation/openclaw/INSTALL.md).

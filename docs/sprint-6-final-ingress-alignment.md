@@ -8,7 +8,7 @@ staging/production nor changes OpenClaw, Telegram, Cloudflare, DNS, or secrets.
 There is one PublicationIntent v1 contract in `automation/core/intent.ts` and
 one publisher in `automation/core/state.ts::Publisher`. New Discovery output is
 the direct core envelope produced by `waagd-discovery` commit
-`17f59e316751079c030bf85abbe75dbbc0a4e562` and enters only through
+`f1c77662b32983d2f2732bf311e699f899a0ce6c` and enters only through
 `automation/discovery/ingress.ts::acceptDiscoveryPublicationIntent()`.
 
 The ingress requires the separately provisioned Discovery ingress secret. Its
@@ -61,5 +61,6 @@ D1 migration.
 - observed existing OpenClaw event mapping and owner reply through the existing
   bot (no second poller);
 - one combined staging acceptance with operator-owned evidence;
-- separately approved R2/media implementation for Telegram file uploads; and
+- real existing-OpenClaw ingress mapping and owner reply verification (binary
+  Telegram attachments are intentionally rejected and R2 is not planned); and
 - explicit production deployment authorization.
