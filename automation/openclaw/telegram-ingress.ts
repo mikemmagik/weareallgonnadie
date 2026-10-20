@@ -38,6 +38,12 @@ export default definePluginEntry({
     'Owner URL submission through the existing OpenClaw Telegram route.',
   register(api: OpenClawPluginApi) {
     const config = configuration();
+    if (
+      new URL(config.apiOrigin).hostname !== 'waagd-staging.waagd.workers.dev'
+    )
+      throw new Error(
+        'WAAGD Telegram OpenClaw plugin is restricted to waagd-staging.',
+      );
     if (config.allowedIds.size === 0)
       throw new Error(
         'WAAGD_TELEGRAM_ALLOWED_IDS must contain at least one owner ID.',
