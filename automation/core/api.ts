@@ -39,11 +39,13 @@ export class Api {
   token: string;
   http: Http;
   sleep: ((ms: number) => Promise<void>) | undefined;
+  access: { clientId: string; clientSecret: string } | undefined;
   constructor(
     base: string,
     token: string,
     http: Http = fetch,
     sleep?: (ms: number) => Promise<void>,
+    access?: { clientId: string; clientSecret: string },
   ) {
     const url = new URL(base);
     if (
@@ -64,6 +66,7 @@ export class Api {
     this.token = token;
     this.http = http;
     this.sleep = sleep;
+    this.access = access;
   }
   async request(
     path: string,
@@ -76,13 +79,20 @@ export class Api {
       {
         method,
         redirect: 'error',
-        headers:
-          method === 'GET'
+        headers: {
+          ...(this.access
+            ? {
+                'CF-Access-Client-Id': this.access.clientId,
+                'CF-Access-Client-Secret': this.access.clientSecret,
+              }
+            : {}),
+          ...(method === 'GET'
             ? {}
             : {
                 Authorization: `Bearer ${this.token}`,
                 'Content-Type': 'application/json',
-              },
+              }),
+        },
         ...(payload ? { body: JSON.stringify(payload) } : {}),
       },
       this.sleep,

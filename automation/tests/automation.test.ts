@@ -364,6 +364,24 @@ test('API origin enforces HTTPS and credentials are never sent on public reads',
     return json({ ok: true, data: { posts: [], next_cursor: null } });
   }).posts();
 });
+test('API sends a Cloudflare Access service token only when configured', async () => {
+  await new Api(
+    'https://site.example',
+    'token',
+    async (_url, init) => {
+      const headers = new Headers(init?.headers);
+      assert.equal(headers.get('cf-access-client-id'), 'service-id');
+      assert.equal(headers.get('cf-access-client-secret'), 'service-secret');
+      assert.equal(headers.get('authorization'), 'Bearer token');
+      return json({
+        ok: true,
+        data: { outcome: 'created', post: post(payload()) },
+      });
+    },
+    noSleep,
+    { clientId: 'service-id', clientSecret: 'service-secret' },
+  ).publish(payload());
+});
 test('temporary network errors and 429/500/503 have bounded retries and Retry-After', async () => {
   let calls = 0;
   const waits: number[] = [];
@@ -874,6 +892,17 @@ test('configuration validates numeric IDs, origin inputs and absolute state path
     configuration({ ...env, WAAGD_TELEGRAM_ALLOWED_IDS: '@username' }),
   );
   assert.throws(() => configuration({ ...env, WAAGD_STATE_DIR: './local' }));
+  assert.throws(() =>
+    configuration({ ...env, WAAGD_CF_ACCESS_CLIENT_ID: 'service-id' }),
+  );
+  assert.deepEqual(
+    configuration({
+      ...env,
+      WAAGD_CF_ACCESS_CLIENT_ID: 'service-id',
+      WAAGD_CF_ACCESS_CLIENT_SECRET: 'service-secret',
+    }).access,
+    { clientId: 'service-id', clientSecret: 'service-secret' },
+  );
 });
 
 test('outgoing retries respect persisted Retry-After and stop after ten cycles', async (t) => {

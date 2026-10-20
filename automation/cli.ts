@@ -9,7 +9,7 @@ import { pollTelegram } from './telegram/poll.ts';
 async function main() {
   const config = configuration();
   const publisher = new Publisher(
-    new Api(config.apiOrigin, config.token),
+    new Api(config.apiOrigin, config.token, fetch, undefined, config.access),
     new State(config.stateDir),
     { discoveryIngressToken: config.discoveryIngressToken },
   );

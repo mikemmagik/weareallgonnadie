@@ -7,24 +7,23 @@ separate operator decision.
 
 ## Supported site boundary
 
-The existing `@waagd_bot` ingress may pass an already admitted direct Telegram event
-to `handleOpenClawTelegramInbound()` in `automation/telegram/handler.ts`. The adapter
-accepts only these technical facts:
+For OpenClaw `v2026.10.3`, this repository supplies the linkable plugin package
+at `automation/`. Its `message_received` hook records attachment evidence and
+its `before_dispatch` hook returns the adapter reply through OpenClaw's existing
+reply path. It maps only documented fields: `channel`, `isGroup`, `senderId`,
+`messageId` and `content`. Telegram's direct-chat message ID is used as the
+stable provider identity because this hook version does not expose
+`providerUpdate`.
 
-- `channel: "telegram"` and `direct: true`;
-- numeric sender ID, message ID, and provider update ID;
-- plain message content; and
-- optional media presence only, which is rejected without fetching a file.
+The plugin has no channel ownership: it does not create a bot, call Telegram,
+receive a token, poll, register a webhook, or download media. The adapter still
+verifies the numeric owner allowlist, rejects media without fetching it, invokes
+the sole Publisher, and returns its permalink text. It never invokes an
+editorial model.
 
-The caller keeps responsibility for receiving the event and returning the adapter's
-reply through its own documented OpenClaw reply path. The adapter verifies the
-numeric owner allowlist again, derives a durable update identity, accepts one or more
-public URLs, prepares safe technical metadata/embed fallback cards, publishes through
-the sole Publisher, and returns the permalink. It never invokes an editorial model.
-
-An operator must map the installed OpenClaw version's actual inbound fields to this
-small shape and confirm the reply path in a staging-only test. This repository has
-unit and local Worker/D1 coverage but does not claim a live OpenClaw integration.
+Follow the staging-only [operator packet](../../docs/staging-telegram-operator.md).
+The target MacBook's installed Gateway must still prove the actual event and
+reply path during the live acceptance before Telegram is called integrated.
 
 ## Safety constraints
 

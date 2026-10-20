@@ -27,11 +27,21 @@ export function configuration(env: NodeJS.ProcessEnv = process.env) {
   );
   if ([...allowedIds].some((id) => !/^[1-9]\d*$/.test(id)))
     throw new Error('Telegram IDs must be numeric user IDs.');
+  const accessClientId = env.WAAGD_CF_ACCESS_CLIENT_ID?.trim() || '';
+  const accessClientSecret = env.WAAGD_CF_ACCESS_CLIENT_SECRET?.trim() || '';
+  if (Boolean(accessClientId) !== Boolean(accessClientSecret))
+    throw new Error(
+      'Cloudflare Access requires both WAAGD_CF_ACCESS_CLIENT_ID and WAAGD_CF_ACCESS_CLIENT_SECRET.',
+    );
   const timezone = env.WAAGD_TIMEZONE ?? 'Asia/Bangkok';
   new Intl.DateTimeFormat('en', { timeZone: timezone });
   return {
     apiOrigin: required('WAAGD_API_ORIGIN'),
     token: required('WAAGD_API_WRITE_TOKEN'),
+    access:
+      accessClientId && accessClientSecret
+        ? { clientId: accessClientId, clientSecret: accessClientSecret }
+        : undefined,
     discoveryIngressToken: env.WAAGD_DISCOVERY_INGRESS_TOKEN?.trim() || '',
     stateDir,
     allowedIds,

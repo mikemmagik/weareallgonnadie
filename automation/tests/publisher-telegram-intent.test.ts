@@ -320,4 +320,31 @@ test('OpenClaw ingress projection accepts only direct numeric Telegram owner eve
     ))!.text,
     /^PUBLISHED/,
   );
+  let posts = 0;
+  const mediaDir = await mkdtemp(join(tmpdir(), 'waagd-openclaw-media-'));
+  t.after(() => rm(mediaDir, { recursive: true, force: true }));
+  const mediaPublisher = new Publisher(
+    new Api('https://site.example', 'test-token', async () => {
+      posts++;
+      return new Response('', { status: 500 });
+    }),
+    new State(mediaDir),
+  );
+  assert.match(
+    (await handleOpenClawTelegramInbound(
+      {
+        channel: 'telegram',
+        direct: true,
+        senderId: '123',
+        messageId: '3',
+        providerUpdate: '3',
+        content: 'https://example.com/media',
+        media: [{}],
+      },
+      new Set(['123']),
+      mediaPublisher,
+    ))!.text,
+    /^UNSUPPORTED MEDIA/,
+  );
+  assert.equal(posts, 0);
 });

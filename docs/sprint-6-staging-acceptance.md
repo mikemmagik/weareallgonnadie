@@ -14,17 +14,18 @@ secret и доступ владельца к существующему `@waagd_
    быть idempotent.
 3. Оставить legacy `daily` и Telegram poller выключенными. Убедиться, что нет
    второго `getUpdates` consumer.
-4. В установленном OpenClaw добавить **один** `before_dispatch` handoff:
-   из принятого existing Telegram channel event передать `channel`, direct status,
-   numeric sender ID, stable message ID, provider update ID, text и presence media
-   в `handleOpenClawTelegramInbound()`. Handler возвращает owner reply через
-   поддерживаемый reply путь host-а. Не включать handler, пока field mapping не
-   подтверждён live staging event.
+4. Подключить linkable package `automation/` как единственный OpenClaw plugin
+   `waagd-telegram-ingress`. В OpenClaw `v2026.10.3` он получает media evidence
+   через `message_received`, а direct owner text обрабатывает в
+   `before_dispatch`; OpenClaw сам доставляет returned text. Точные команды и
+   private environment описаны в
+   [staging Telegram operator packet](staging-telegram-operator.md). Не
+   включать plugin, пока target MacBook не подтверждён и private Access/service
+   credentials не установлены.
 
-Официальный OpenClaw hook `before_dispatch` предназначен для interception
-inbound message до model dispatch; adapter намеренно не создаёт poller и не хранит
-bot token. Формат в этом репозитории подготовлен и unit-tested, но фактический
-installed event ещё не наблюдался, поэтому Telegram не считается интегрированным.
+Plugin не создаёт poller/webhook/bot и не хранит bot token. Фактический
+installed event и reply path остаются предметом live staging acceptance, поэтому
+Telegram не считается интегрированным до успешного B.
 
 ## Одна совмещённая acceptance
 
