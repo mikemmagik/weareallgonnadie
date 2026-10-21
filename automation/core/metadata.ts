@@ -5,6 +5,7 @@ import type {
 } from '../../shared/contracts.ts';
 import { publicPreviewUrl } from '../../shared/preview.ts';
 import { redditPost, tikTokVideoId } from '../../shared/media.ts';
+import { resolveSource } from '../../shared/source.ts';
 import {
   normalizeUrl,
   publicHttp,
@@ -29,6 +30,7 @@ export function decode(value: string): string {
         ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" })[key] ?? '',
     )
     .replace(/<[^>]*>/g, '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -40,10 +42,38 @@ function attributes(tag: string): Record<string, string> {
     ]),
   );
 }
-export function extractMetadata(
+export interface DocumentMetadata {
+  title: string;
+  image: string | null;
+  canonicalUrl: string | null;
+}
+
+function canonicalUrl(html: string, url: string): string | null {
+  const origin = new URL(url);
+  for (const tag of html.match(/<link\b[^>]*>/gi) ?? []) {
+    const attrs = attributes(tag);
+    if (
+      !attrs.rel
+        ?.split(/\s+/)
+        .some((part) => part.toLowerCase() === 'canonical')
+    )
+      continue;
+    if (!attrs.href) continue;
+    try {
+      const candidate = publicUrl(new URL(attrs.href, url).toString());
+      // A document cannot use a cross-host canonical hint to relabel itself.
+      if (candidate.hostname === origin.hostname) return candidate.toString();
+    } catch {
+      /* Ignore malformed or non-public canonical metadata. */
+    }
+  }
+  return null;
+}
+
+export function extractDocumentMetadata(
   html: string,
   url: string,
-): { title: string; image: string | null } {
+): DocumentMetadata {
   const meta = new Map<string, string>();
   for (const tag of html.match(/<meta\b[^>]*>/gi) ?? []) {
     const attrs = attributes(tag);
@@ -55,19 +85,35 @@ export function extractMetadata(
       meta.get('og:title') ??
       meta.get('twitter:title') ??
       decode(html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? '')
-    ).trim() || new URL(url).hostname;
+    ).trim() ||
+    resolveSource(url)?.source ||
+    new URL(url).hostname;
   let image: string | null = null;
+  const imageSource =
+    meta.get('og:image') ??
+    meta.get('og:image:url') ??
+    meta.get('twitter:image') ??
+    meta.get('twitter:image:src');
   try {
-    const candidate = new URL(
-      meta.get('og:image') ?? meta.get('twitter:image') ?? '',
-      url,
-    ).toString();
-    if (meta.get('og:image') || meta.get('twitter:image'))
-      image = publicPreviewUrl(candidate);
+    if (imageSource)
+      image = publicPreviewUrl(new URL(imageSource, url).toString());
   } catch {
     /* Missing preview is valid. */
   }
-  return { title: title.slice(0, 300), image };
+  return {
+    title: title.slice(0, 300),
+    image,
+    canonicalUrl: canonicalUrl(html, url),
+  };
+}
+
+/** Backwards-compatible compact projection for callers that only need card metadata. */
+export function extractMetadata(
+  html: string,
+  url: string,
+): { title: string; image: string | null } {
+  const metadata = extractDocumentMetadata(html, url);
+  return { title: metadata.title, image: metadata.image };
 }
 export function providerEmbed(input: string): Embed {
   const url = new URL(input);
@@ -156,11 +202,12 @@ export async function prepareUrl(
     if (!(error instanceof RequestFailure) || [404, 410].includes(error.status))
       throw error;
   }
-  const metadata = extractMetadata(html, resolvedUrl);
+  const metadata = extractDocumentMetadata(html, resolvedUrl);
+  const sourceUrl = metadata.canonicalUrl ?? resolvedUrl;
   const payload = linkPayload(
     input,
     metadata.title,
-    new URL(url).hostname,
+    resolveSource(sourceUrl)?.source ?? new URL(resolvedUrl).hostname,
     'telegram',
   );
   const resolvedEmbed = providerEmbed(normalizeUrl(resolvedUrl));

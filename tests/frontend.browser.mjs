@@ -27,6 +27,9 @@ export async function verifyMonitor(page, base = 'http://127.0.0.1:4321') {
   const fixtures = [
     post(1, {
       title: '<img src=x onerror=alert(1)>',
+      origin: 'telegram',
+      source: 'Telegram',
+      url: 'https://www.bangkokpost.com/business/general/3340699/story',
       body: 'First complete paragraph.\nIt keeps its original line break.\n\n<script>window.pwned=true</script>\n\nFinal complete paragraph.',
       preview: {
         image_url: 'https://images.example/robot.svg',
@@ -166,6 +169,11 @@ export async function verifyMonitor(page, base = 'http://127.0.0.1:4321') {
   check(
     (await page.locator('.post-news .article-paragraph').count()) === 3,
     'News body renders as separate plain-text paragraphs',
+  );
+  check(
+    (await page.locator('.post-news .source-link').first().innerText()) ===
+      'Bangkok Post ↗',
+    'Legacy Telegram attribution resolves to the original publisher',
   );
   check(
     (
@@ -344,6 +352,6 @@ if (import.meta.main) {
     { encoding: 'utf8', maxBuffer: 2_000_000 },
   );
   assert.doesNotMatch(output, /### Error/);
-  assert.match(output, /"passed":38/);
+  assert.match(output, /"passed":39/);
   console.log(output.slice(0, output.indexOf('### Ran Playwright code')));
 }

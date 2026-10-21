@@ -121,7 +121,7 @@ test('D03: Reddit uses an isolated adapter and keeps restricted originals withou
     restricted.url,
     'https://www.reddit.com/r/private/comments/abc123/title/',
   );
-  assert.equal(restricted.title, 'www.reddit.com');
+  assert.equal(restricted.title, 'Reddit');
 });
 
 test('D01: available originals publish neutrally; failed embeds cannot establish removal', async () => {
@@ -134,7 +134,10 @@ test('D01: available originals publish neutrally; failed embeds cannot establish
       requests.push(url);
       return new Response('', { headers: { 'content-type': 'text/html' } });
     });
-    assert.equal(result.title, new URL(original).hostname);
+    assert.equal(
+      result.title,
+      original.includes('youtu.be') ? 'YouTube' : new URL(original).hostname,
+    );
     assert.equal(result.url, original);
     assert.deepEqual(
       requests,

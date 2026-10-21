@@ -1,6 +1,7 @@
 import type { Post } from '../../shared/contracts.ts';
 import { queueExternalMedia } from './external-content.ts';
 import { redditPost } from '../../shared/media.ts';
+import { recognizedEmbedProvider } from '../../shared/source.ts';
 import {
   articleBlocks,
   changelogBlocks,
@@ -8,6 +9,7 @@ import {
   previewFor,
   relativeDate,
   safeUrl,
+  sourceForDisplay,
 } from './presentation.ts';
 
 function element<K extends keyof HTMLElementTagNameMap>(
@@ -242,7 +244,8 @@ function mediaFor(post: Post): HTMLElement | null {
     } else load();
     return media;
   }
-  if (post.type === 'news') return null;
+  const recognizedProvider = recognizedEmbedProvider(original);
+  if (post.type === 'news' && !recognizedProvider) return null;
   if (!original) return null;
   const media = element('div', 'media embed-media wide');
   const link = externalLink(original, '', 'load-player fallback-player');
@@ -316,6 +319,7 @@ export function renderPost(post: Post, index: number): HTMLElement {
     content.append(body);
   } else if (post.body?.trim())
     content.append(element('p', 'post-preview', post.body));
+  const sourceName = sourceForDisplay(post);
   const source = element('div', 'post-source');
   source.append(
     element(
@@ -323,13 +327,13 @@ export function renderPost(post: Post, index: number): HTMLElement {
       'source-mark',
       post.type === 'changelog'
         ? '>_'
-        : post.source.trim().slice(0, 1).toUpperCase(),
+        : sourceName.trim().slice(0, 1).toUpperCase(),
     ),
   );
   source.append(
     original
-      ? externalLink(original, `${post.source || 'Original source'} ↗`)
-      : element('span', '', post.source),
+      ? externalLink(original, `${sourceName || 'Original source'} ↗`)
+      : element('span', '', sourceName),
   );
   content.append(source);
   if (post.references.length) {

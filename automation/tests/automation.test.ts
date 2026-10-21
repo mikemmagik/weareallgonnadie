@@ -17,6 +17,7 @@ import {
 import type { Http } from '../core/http.ts';
 import {
   prepareUrl,
+  extractDocumentMetadata,
   extractMetadata,
   providerEmbed,
   linkPayload,
@@ -290,6 +291,24 @@ test('news metadata handles attribute order, entities, title and missing preview
     title: 'news.example',
     image: null,
   });
+  assert.deepEqual(
+    extractDocumentMetadata(
+      '<link rel="canonical" href="/story"><meta property="og:image:url" content="/image.png">',
+      'https://www.bangkokpost.com/business/story',
+    ),
+    {
+      title: 'Bangkok Post',
+      image: 'https://www.bangkokpost.com/image.png',
+      canonicalUrl: 'https://www.bangkokpost.com/story',
+    },
+  );
+  assert.equal(
+    extractDocumentMetadata(
+      '<link rel="canonical" href="https://bangkokpost.com.evil.example/story">',
+      'https://www.bangkokpost.com/business/story',
+    ).canonicalUrl,
+    null,
+  );
 });
 test('recognized embeds and unsupported paths degrade to contract-valid links', () => {
   for (const url of [
@@ -323,6 +342,42 @@ test('manual URLs publish with neutral fallback when metadata is unavailable', a
   );
   assert.equal(fallback.title, 'example.com');
   assert.equal(fallback.url, 'https://example.com/private');
+  const resolved = await prepareUrl(
+    'https://short.example/bangkok',
+    async () => {
+      const response = new Response('', {
+        headers: { 'content-type': 'text/html' },
+      });
+      Object.defineProperty(response, 'url', {
+        value: 'https://www.bangkokpost.com/business/story',
+      });
+      return response;
+    },
+  );
+  assert.equal(resolved.source, 'Bangkok Post');
+  assert.equal(resolved.origin, 'telegram');
+});
+test('manual URLs use deterministic source labels and retain verified TikTok identity', async () => {
+  const urls = [
+    ['https://youtu.be/abcdefghijk', 'YouTube'],
+    ['https://www.instagram.com/reel/abc_DEF/', 'Instagram'],
+    ['https://www.reddit.com/r/test/comments/abc123/title/', 'Reddit'],
+    ['https://www.tiktok.com/@user/video/6718335390845095173', 'TikTok'],
+    ['https://news.example/story', 'news.example'],
+  ] as const;
+  for (const [url, source] of urls) {
+    const result = await prepareUrl(
+      url,
+      async () => new Response('', { status: 403 }),
+    );
+    assert.equal(result.source, source, url);
+    assert.equal(result.origin, 'telegram', url);
+  }
+  const tiktok = await prepareUrl(
+    'https://www.tiktok.com/@user/video/6718335390845095173',
+    async () => new Response('', { status: 403 }),
+  );
+  assert.equal(tiktok.source_item_id, '6718335390845095173');
 });
 test('normalization preserves query ordering, path case and trailing slash', () => {
   assert.equal(
@@ -1114,7 +1169,7 @@ test('manual metadata fallback never permits a private target, including unsafe 
     'https://youtu.be/abcdefghijk',
     async () => new Response('', { status: 403 }),
   );
-  assert.equal(fallback.title, 'youtu.be');
+  assert.equal(fallback.title, 'YouTube');
   assert.equal(fallback.type, 'video');
   assert.equal(fallback.url, 'https://youtu.be/abcdefghijk');
 });

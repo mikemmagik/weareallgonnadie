@@ -14,7 +14,9 @@ import {
   previewFor,
   relativeDate,
   safeUrl,
+  sourceForDisplay,
 } from '../src/lib/presentation.ts';
+import { recognizedEmbedProvider, resolveSource } from '../shared/source.ts';
 import { contactHref, operator } from '../src/lib/legal.ts';
 
 test('legal contact stays unavailable until a valid mailbox is explicitly verified', () => {
@@ -70,6 +72,29 @@ test('preview policy permits same-origin assets and retains external URL suppres
     assert.equal(previewFor(value, origin), null);
 });
 
+test('source resolver recognizes exact publisher and provider hosts without trusting lookalikes', () => {
+  assert.deepEqual(
+    resolveSource('https://www.bangkokpost.com/business/story'),
+    {
+      source: 'Bangkok Post',
+      domain: 'bangkokpost.com',
+      provider: null,
+    },
+  );
+  assert.equal(
+    resolveSource('https://youtube.com.evil.example/watch')?.source,
+    'youtube.com.evil.example',
+  );
+  assert.equal(
+    recognizedEmbedProvider('https://youtube.com.evil.example/watch'),
+    null,
+  );
+  assert.equal(
+    recognizedEmbedProvider('https://youtu.be/abcdefghijk'),
+    'youtube',
+  );
+});
+
 export function fixture(index = 1): Post & { type: 'news'; url: string } {
   return {
     id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
@@ -94,6 +119,18 @@ function envelope(
 ): ListPostsResponse {
   return { ok: true, data: { posts, next_cursor } };
 }
+
+test('legacy Telegram source is rendered from its original public URL without changing origin', () => {
+  const legacy = {
+    ...fixture(),
+    origin: 'telegram' as const,
+    source: 'Telegram',
+    url: 'https://www.bangkokpost.com/business/general/3340699/story',
+  };
+  assert.equal(sourceForDisplay(legacy), 'Bangkok Post');
+  assert.equal(legacy.origin, 'telegram');
+  assert.equal(legacy.source, 'Telegram');
+});
 
 test('wire parsing uses shared types, supports all four kinds and nullable metadata', () => {
   const posts: Post[] = [

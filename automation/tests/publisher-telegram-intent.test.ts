@@ -233,7 +233,7 @@ test('Telegram owner URLs remain available while auto is paused and redelivery i
     source_item_id: (submissions[0] as { source_item_id: string })
       .source_item_id,
     title: 'example.com',
-    source: 'Telegram',
+    source: 'example.com',
     origin: 'telegram',
     preview: null,
     embed: {

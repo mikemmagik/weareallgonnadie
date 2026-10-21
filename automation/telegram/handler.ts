@@ -193,14 +193,7 @@ export class TelegramSubmissionAdapter {
     submission = 0,
   ): Promise<PublicationIntent> {
     const url = oneSubmissionUrl(input);
-    const sourceItemId = `telegram-${digest(
-      `${message.ownerKey}:${message.updateId}:${message.messageId}:${submission}`,
-    )}`;
     const post: CreatePostInput = await this.prepare(url, this.http);
-    if (post.source !== 'TikTok') {
-      post.source = 'Telegram';
-      post.source_item_id = sourceItemId;
-    }
     return withPublicationIntentContentHash({
       version: 1,
       intent_id: intentId(message, submission),

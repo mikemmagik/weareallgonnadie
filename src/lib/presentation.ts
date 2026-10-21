@@ -2,6 +2,8 @@ import { isHttpUrl } from '../../shared/contracts.ts';
 import type { Embed } from '../../shared/contracts.ts';
 import { redditPost } from '../../shared/media.ts';
 import { publicPreviewUrl } from '../../shared/preview.ts';
+import { resolveSource } from '../../shared/source.ts';
+import type { Post } from '../../shared/contracts.ts';
 
 /** Same-origin assets may load normally; external previews retain the shared policy. */
 export function previewFor(value: unknown, origin: string) {
@@ -17,6 +19,15 @@ export function previewFor(value: unknown, origin: string) {
 
 export function safeUrl(value: unknown): string | null {
   return isHttpUrl(value) ? value : null;
+}
+
+/** Repair legacy ingress attribution visually without mutating the stored post. */
+export function sourceForDisplay(post: Post): string {
+  if (post.source.trim().toLowerCase() !== 'telegram') return post.source;
+  return (
+    resolveSource(safeUrl(post.canonical_url) ?? safeUrl(post.url))?.source ??
+    post.source
+  );
 }
 
 export interface Player {
