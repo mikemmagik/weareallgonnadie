@@ -1,6 +1,7 @@
 name: Sprint 6 site integration
 
 on:
+  workflow_dispatch:
   push:
     branches: [main, sprint-6-site-integration]
   pull_request:
@@ -35,7 +36,7 @@ jobs:
       - name: Check out Discovery producer outside the site workspace
         run: |
           git clone --no-checkout https://github.com/mikemmagik/waagd-discovery.git "$RUNNER_TEMP/waagd-discovery"
-          git -C "$RUNNER_TEMP/waagd-discovery" checkout --detach f1c77662b32983d2f2732bf311e699f899a0ce6c
+          git -C "$RUNNER_TEMP/waagd-discovery" checkout --detach 298924d84bd6c2a5ad1e715cc748aaea46fca64a
       - name: Install the pinned Discovery producer
         working-directory: ${{ runner.temp }}/waagd-discovery
         run: python -m pip install --disable-pip-version-check .

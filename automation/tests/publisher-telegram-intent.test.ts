@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Api } from '../core/api.ts';
 import {
+  contentHashForPublicationIntent,
   validatePublicationIntent,
   withPublicationIntentContentHash,
 } from '../core/intent.ts';
@@ -17,7 +18,7 @@ import {
 
 const postId = '5bdac05a-6f04-4bb9-a7d7-c08530c4fb12';
 
-function intent(): PublicationIntent {
+function intent(): Extract<PublicationIntent, { version: 1 }> {
   return withPublicationIntentContentHash({
     version: 1,
     intent_id: 'discovery-12345678',
@@ -111,6 +112,77 @@ test('PublicationIntent requires authenticated Discovery ingress and retains a d
     publisher.submitDiscoveryIntent(changed, 'discovery-ingress-test-token'),
     StateError,
   );
+});
+
+test('PublicationIntent v2 fixtures have stable hashes and keep trusted provenance distinct from independent verification', async () => {
+  const fixture = async (name: string) =>
+    JSON.parse(
+      await readFile(new URL(`./fixtures/${name}`, import.meta.url), 'utf8'),
+    ) as PublicationIntent;
+  const trusted = (await fixture(
+    'publication-intent-v2-trusted-publisher.json',
+  )) as Extract<PublicationIntent, { version: 2 }>;
+  const independentlyVerified = (await fixture(
+    'publication-intent-v2-independently-verified.json',
+  )) as Extract<PublicationIntent, { version: 2 }>;
+  const { content_hash: trustedHash, ...trustedUnsigned } = trusted;
+  const { content_hash: independentHash, ...independentUnsigned } =
+    independentlyVerified;
+  assert.equal(contentHashForPublicationIntent(trustedUnsigned), trustedHash);
+  assert.equal(
+    contentHashForPublicationIntent(independentUnsigned),
+    independentHash,
+  );
+  assert.equal(validatePublicationIntent(trusted).valid, true);
+  assert.equal(validatePublicationIntent(independentlyVerified).valid, true);
+  const reordered = structuredClone(trusted);
+  const proof = reordered.editorial.trusted_publisher!;
+  reordered.editorial.trusted_publisher = {
+    safety_gates: {
+      sensitive_content: proof.safety_gates.sensitive_content,
+      safe_retrieval: proof.safety_gates.safe_retrieval,
+      publisher_identity: proof.safety_gates.publisher_identity,
+    },
+    verified_at: proof.verified_at,
+    article_host: proof.article_host,
+    article_url: proof.article_url,
+    trusted_rss_url: proof.trusted_rss_url,
+    publisher_name: proof.publisher_name,
+    publisher_id: proof.publisher_id,
+  };
+  const { content_hash: reorderedHash, ...reorderedUnsigned } = reordered;
+  assert.equal(reorderedHash, trustedHash);
+  assert.equal(contentHashForPublicationIntent(reorderedUnsigned), trustedHash);
+  assert.equal(validatePublicationIntent(reordered).valid, true);
+  const unsafe = structuredClone(trusted);
+  unsafe.editorial.trusted_publisher!.article_url = 'http://127.0.0.1/story';
+  unsafe.editorial.trusted_publisher!.article_host = '127.0.0.1';
+  unsafe.post.url = 'http://127.0.0.1/story';
+  unsafe.post.canonical_url = 'http://127.0.0.1/story';
+  unsafe.content_hash = withPublicationIntentContentHash({
+    ...unsafe,
+    editorial: unsafe.editorial,
+  }).content_hash;
+  assert.equal(validatePublicationIntent(unsafe).valid, false);
+  const forged = structuredClone(trusted);
+  (forged.editorial as { review_route: string }).review_route =
+    'independently_verified';
+  forged.content_hash = withPublicationIntentContentHash({
+    ...forged,
+    editorial: forged.editorial,
+  }).content_hash;
+  assert.equal(validatePublicationIntent(forged).valid, false);
+  const legacy = intent();
+  assert.ok(legacy.editorial);
+  const legacyWithRoute = {
+    ...legacy,
+    editorial: { ...legacy.editorial, review_route: 'trusted_publisher' },
+  };
+  legacyWithRoute.content_hash = contentHashForPublicationIntent({
+    ...legacy,
+    editorial: legacy.editorial,
+  } as Omit<Extract<PublicationIntent, { version: 1 }>, 'content_hash'>);
+  assert.equal(validatePublicationIntent(legacyWithRoute).valid, false);
 });
 
 test('automatic intents fail closed, reject article type, and replay only after resume', async (t) => {
