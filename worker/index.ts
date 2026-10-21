@@ -2,7 +2,7 @@ import type { Env } from './env.ts';
 import { authenticate } from './auth.ts';
 import { isPostId, listQuery } from './cursor.ts';
 import { ApiError, errorResponse, invalid, json } from './errors.ts';
-import { createInput, validateDelete } from './input.ts';
+import { createPublicationInput, validateDelete } from './input.ts';
 import { createPost, deletePost, getPost, listPosts } from './store.ts';
 import { secureResponse } from './security.ts';
 import { redditAdapter } from './reddit.ts';
@@ -42,14 +42,14 @@ async function route(request: Request, env: Env): Promise<Response> {
       return json({ ok: true, data: await listPosts(env.DB, limit, cursor) });
     }
     if (collection) {
-      const input = await createInput(request);
+      const input = await createPublicationInput(request);
       if (!env.DB)
         throw new ApiError(
           'SERVICE_UNAVAILABLE',
           'Database is unavailable.',
           503,
         );
-      const data = await createPost(env.DB, input);
+      const data = await createPost(env.DB, input.post, input.audit);
       return json(
         { ok: true, data },
         data.outcome === 'created' ? 201 : 200,

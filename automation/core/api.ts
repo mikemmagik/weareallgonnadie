@@ -7,6 +7,7 @@ import type {
 } from '../../shared/contracts.ts';
 import { retryRequest } from './http.ts';
 import type { Http } from './http.ts';
+import type { PublicationAudit } from '../../shared/publication-audit.ts';
 
 export const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -71,7 +72,8 @@ export class Api {
   async request(
     path: string,
     method = 'GET',
-    payload?: CreatePostInput,
+    payload?: unknown,
+    audit?: PublicationAudit,
   ): Promise<unknown> {
     const response = await retryRequest(
       this.http,
@@ -91,6 +93,9 @@ export class Api {
             : {
                 Authorization: `Bearer ${this.token}`,
                 'Content-Type': 'application/json',
+                ...(audit
+                  ? { 'X-WAAGD-Publication-Audit': JSON.stringify(audit) }
+                  : {}),
               }),
         },
         ...(payload ? { body: JSON.stringify(payload) } : {}),
@@ -101,13 +106,18 @@ export class Api {
     if (envelope.ok !== true) throw new Error('Invalid API success envelope.');
     return envelope.data;
   }
-  async publish(payload: CreatePostInput): Promise<CreatePostResult> {
+  async publish(
+    payload: CreatePostInput,
+    audit?: PublicationAudit,
+  ): Promise<CreatePostResult> {
     if (
       !validateCreatePostInput(payload).valid ||
       Buffer.byteLength(JSON.stringify(payload)) > 256 * 1024
     )
       throw new Error('Invalid publication payload.');
-    const result = record(await this.request('/api/posts', 'POST', payload));
+    const result = record(
+      await this.request('/api/posts', 'POST', payload, audit),
+    );
     const post = parsePost(result.post);
     if (result.outcome === 'created') return { outcome: 'created', post };
     if (

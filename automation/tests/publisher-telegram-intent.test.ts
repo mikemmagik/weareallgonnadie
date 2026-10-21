@@ -113,6 +113,53 @@ test('PublicationIntent requires authenticated Discovery ingress and retains a d
   );
 });
 
+test('PublicationIntent v2 keeps trusted publisher provenance distinct from independent verification', () => {
+  const trusted = withPublicationIntentContentHash({
+    version: 2 as const,
+    intent_id: 'auto-trusted-publisher-20261022',
+    origin: 'auto' as const,
+    authorization: { kind: 'discovery' as const, approved: true as const },
+    editorial: {
+      decision_id: 'decision-trusted-1',
+      source_event_id: 'candidate:trusted-1;revision:1',
+      source_attribution: 'The Guardian',
+      approved_at: '2026-10-22T00:00:00.000Z',
+      publication_policy: {
+        version: 'trusted-policy-v1',
+        outcome: 'approved' as const,
+      },
+      review_route: 'trusted_publisher' as const,
+      trusted_publisher: {
+        publisher_id: 'guardian',
+        publisher_name: 'The Guardian',
+        trusted_rss_url: 'https://www.theguardian.com/world/rss',
+        article_url: 'https://www.theguardian.com/world/2026/oct/22/example',
+        article_host: 'www.theguardian.com',
+        verified_at: '2026-10-22T00:00:00.000Z',
+        safety_gates: {
+          publisher_identity: true,
+          safe_retrieval: true,
+          sensitive_content: 'clear' as const,
+        },
+      },
+    },
+    post: {
+      ...intent().post,
+      canonical_url: 'https://www.theguardian.com/world/2026/oct/22/example',
+      url: 'https://www.theguardian.com/world/2026/oct/22/example',
+    },
+  });
+  assert.equal(validatePublicationIntent(trusted).valid, true);
+  const forged = structuredClone(trusted);
+  (forged.editorial as { review_route: string }).review_route =
+    'independently_verified';
+  forged.content_hash = withPublicationIntentContentHash({
+    ...forged,
+    editorial: forged.editorial,
+  }).content_hash;
+  assert.equal(validatePublicationIntent(forged).valid, false);
+});
+
 test('automatic intents fail closed, reject article type, and replay only after resume', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'waagd-kill-switch-'));
   t.after(() => rm(dir, { recursive: true, force: true }));

@@ -5,6 +5,13 @@ import {
 import type { CreatePostInput } from '../shared/contracts.ts';
 import { ApiError, invalid } from './errors.ts';
 import { isTikTokUrl, tikTokVideoId } from '../shared/media.ts';
+import { validatePublicationAudit } from '../shared/publication-audit.ts';
+import type { PublicationAudit } from '../shared/publication-audit.ts';
+
+export interface PublicationInput {
+  post: CreatePostInput;
+  audit: PublicationAudit | null;
+}
 
 /** Authenticated writers may supply resolved metadata, but never an unchecked identity. */
 export function publicationIdentity(input: CreatePostInput): CreatePostInput {
@@ -88,7 +95,9 @@ export async function readBody(
   }
   return bytes;
 }
-export async function createInput(request: Request): Promise<CreatePostInput> {
+export async function createPublicationInput(
+  request: Request,
+): Promise<PublicationInput> {
   if (
     !/^application\/json(?:\s*;\s*charset\s*=\s*(?:utf-8|"utf-8"))?\s*$/i.test(
       request.headers.get('Content-Type') ?? '',
@@ -120,7 +129,26 @@ export async function createInput(request: Request): Promise<CreatePostInput> {
       400,
       result.issues,
     );
-  return publicationIdentity(result.value);
+  const header = request.headers.get('X-WAAGD-Publication-Audit');
+  let audit: PublicationAudit | null = null;
+  if (header !== null) {
+    try {
+      const value = JSON.parse(header) as unknown;
+      if (!validatePublicationAudit(value)) throw new Error();
+      audit = value;
+    } catch {
+      invalid('Invalid trusted Publisher audit envelope.', 'audit');
+    }
+  }
+  return {
+    post: publicationIdentity(result.value),
+    audit,
+  };
+}
+
+/** Backwards-compatible raw post parser for tests and local callers. */
+export async function createInput(request: Request): Promise<CreatePostInput> {
+  return (await createPublicationInput(request)).post;
 }
 export async function validateDelete(
   request: Request,

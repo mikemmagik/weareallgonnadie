@@ -13,6 +13,7 @@ import { ApiError } from './errors.ts';
 import { canonicalizeUrl } from './url.ts';
 import { publicationIdentity } from './input.ts';
 import { tikTokVideoId } from '../shared/media.ts';
+import type { PublicationAudit } from '../shared/publication-audit.ts';
 
 // Old immutable rows can carry the verified embed ID under a different namespace.
 // Block insertion on any such claim, then validate it before returning a duplicate.
@@ -76,6 +77,7 @@ export async function getPost(db: D1Database, id: string): Promise<Post> {
 export async function createPost(
   db: D1Database,
   input: CreatePostInput,
+  audit: PublicationAudit | null = null,
 ): Promise<CreatePostResult> {
   input = publicationIdentity(input);
   const tikTokId = input.source === 'TikTok' ? input.source_item_id : null;
@@ -97,46 +99,88 @@ export async function createPost(
         },
       ],
     );
-  const results = await db.batch<PostRow>([
-    db
-      .prepare(
-        `INSERT INTO posts (id, type, url, canonical_url, source_item_id, title, source, origin, preview, embed, body, "references", published_at, deleted_at)
+  let results;
+  try {
+    results = await db.batch<PostRow>([
+      db
+        .prepare(
+          `INSERT INTO posts (id, type, url, canonical_url, source_item_id, title, source, origin, preview, embed, body, "references", published_at, deleted_at)
       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL
-      ${tikTokId ? `WHERE NOT EXISTS (SELECT 1 FROM posts WHERE ${LEGACY_TIKTOK})` : 'WHERE 1'}
+      WHERE NOT EXISTS (
+        SELECT 1 FROM posts WHERE
+          (canonical_url = ? AND canonical_url IS NOT NULL)
+          OR (source = ? AND source_item_id = ? AND source_item_id IS NOT NULL)
+          ${tikTokId ? `OR (${LEGACY_TIKTOK})` : ''}
+      )
+      ${audit ? 'AND NOT EXISTS (SELECT 1 FROM publication_audit WHERE intent_id = ?)' : ''}
       ON CONFLICT(canonical_url) WHERE canonical_url IS NOT NULL DO NOTHING
       ON CONFLICT(source, source_item_id) WHERE source_item_id IS NOT NULL DO NOTHING
       RETURNING *`,
-      )
-      .bind(
-        id,
-        input.type,
-        input.url,
-        canonical,
-        input.source_item_id,
-        input.title,
-        input.source,
-        input.origin,
-        input.preview === null ? null : JSON.stringify(input.preview),
-        input.embed === null ? null : JSON.stringify(input.embed),
-        input.body,
-        JSON.stringify(input.references),
-        new Date().toISOString(),
-        ...legacyParams,
-      ),
-    // Same transaction, primary database: duplicate lookup cannot race an insertion/deletion.
-    db
-      .prepare(
-        `SELECT * FROM posts WHERE canonical_url = ? AND canonical_url IS NOT NULL
+        )
+        .bind(
+          id,
+          input.type,
+          input.url,
+          canonical,
+          input.source_item_id,
+          input.title,
+          input.source,
+          input.origin,
+          input.preview === null ? null : JSON.stringify(input.preview),
+          input.embed === null ? null : JSON.stringify(input.embed),
+          input.body,
+          JSON.stringify(input.references),
+          new Date().toISOString(),
+          canonical,
+          input.source,
+          input.source_item_id,
+          ...legacyParams,
+          ...(audit ? [audit.intent_id] : []),
+        ),
+      audit
+        ? db
+            .prepare(
+              `INSERT INTO publication_audit
+              (intent_id, post_id, intent_version, content_hash, semantic_identity, review_route, editorial, recorded_at)
+             SELECT ?, ?, ?, ?, ?, ?, ?, ?
+             WHERE EXISTS (SELECT 1 FROM posts WHERE id = ?)
+             ON CONFLICT(intent_id) DO NOTHING`,
+            )
+            .bind(
+              audit.intent_id,
+              id,
+              audit.intent_version,
+              audit.content_hash,
+              audit.semantic_identity,
+              audit.review_route,
+              audit.editorial === null ? null : JSON.stringify(audit.editorial),
+              new Date().toISOString(),
+              id,
+            )
+        : db.prepare('SELECT 1'),
+      // Same transaction, primary database: duplicate lookup cannot race an insertion/deletion.
+      db
+        .prepare(
+          `SELECT * FROM posts WHERE canonical_url = ? AND canonical_url IS NOT NULL
       UNION SELECT * FROM posts WHERE source = ? AND source_item_id = ? AND source_item_id IS NOT NULL
       ${tikTokId ? `UNION SELECT * FROM posts WHERE ${LEGACY_TIKTOK}` : ''}`,
-      )
-      .bind(canonical, input.source, input.source_item_id, ...legacyParams),
-  ]);
-  if (results.length !== 2 || results.some((result) => !result.success))
+        )
+        .bind(canonical, input.source, input.source_item_id, ...legacyParams),
+    ]);
+  } catch (error) {
+    if (String(error).includes('automatic_publication_daily_quota'))
+      throw new ApiError(
+        'RATE_LIMITED',
+        'Automatic publication daily quota is exhausted.',
+        429,
+      );
+    throw error;
+  }
+  if (results.length !== 3 || results.some((result) => !result.success))
     throw new Error('Database write failed');
   const created = results[0]?.results[0];
   if (created) return { outcome: 'created', post: post(created) };
-  const matches = results[1]?.results ?? [];
+  const matches = results[2]?.results ?? [];
   if (matches.length > 1)
     throw new ApiError(
       'VALIDATION_ERROR',

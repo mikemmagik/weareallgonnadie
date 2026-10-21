@@ -17,12 +17,13 @@ import type {
 } from '../../shared/contracts.ts';
 import { validateCreatePostInput } from '../../shared/contracts.ts';
 import {
-  contentHashForPublicationIntent,
   mapPublicationIntent,
   publicationSemanticIdentity,
   validatePublicationIntent,
 } from './intent.ts';
 import type { PublicationIntent } from './intent.ts';
+import type { PublicationAudit } from '../../shared/publication-audit.ts';
+import { validatePublicationAudit } from '../../shared/publication-audit.ts';
 import { parsePost, record } from './api.ts';
 import type { Api } from './api.ts';
 import { RequestFailure } from './http.ts';
@@ -186,6 +187,16 @@ function intentStateKey(intentId: string): string {
 function intentReceiptName(intentId: string): string {
   return `receipt-${intentStateKey(intentId)}.json`;
 }
+function auditForIntent(intent: PublicationIntent): PublicationAudit {
+  return {
+    intent_id: intent.intent_id,
+    intent_version: intent.version,
+    content_hash: intent.content_hash,
+    semantic_identity: publicationSemanticIdentity(intent),
+    review_route: intent.version === 2 ? intent.editorial.review_route : null,
+    editorial: intent.editorial as Record<string, unknown> | null,
+  };
+}
 export class Publisher {
   api: Api;
   state: State;
@@ -272,15 +283,9 @@ export class Publisher {
           : 'Telegram publication is paused.',
       );
     const receiptName = intentReceiptName(checked.value.intent_id);
-    const contentHash = contentHashForPublicationIntent({
-      version: checked.value.version,
-      intent_id: checked.value.intent_id,
-      origin: checked.value.origin,
-      authorization: checked.value.authorization,
-      editorial: checked.value.editorial,
-      post: checked.value.post,
-    });
+    const contentHash = checked.value.content_hash;
     const identity = publicationSemanticIdentity(checked.value);
+    const audit = auditForIntent(checked.value);
     return this.state.locked(
       `intent-${intentStateKey(checked.value.intent_id)}`,
       async () => {
@@ -320,6 +325,7 @@ export class Publisher {
           origin: checked.value.origin,
           content_hash: contentHash,
           semantic_identity: identity,
+          audit,
           status: 'accepted',
           accepted_at: new Date().toISOString(),
         });
@@ -329,12 +335,14 @@ export class Publisher {
             intent_id: checked.value.intent_id,
             content_hash: contentHash,
             semantic_identity: identity,
+            audit,
           });
           await this.state.write(receiptName, {
             intent_id: checked.value.intent_id,
             origin: checked.value.origin,
             content_hash: contentHash,
             semantic_identity: identity,
+            audit,
             status: 'published',
             published_at: new Date().toISOString(),
             result,
@@ -349,6 +357,7 @@ export class Publisher {
             origin: checked.value.origin,
             content_hash: contentHash,
             semantic_identity: identity,
+            audit,
             status: queued ? 'queued' : 'failed',
             updated_at: new Date().toISOString(),
             failure:
@@ -367,6 +376,7 @@ export class Publisher {
       intent_id?: string;
       content_hash?: string;
       semantic_identity?: string;
+      audit?: PublicationAudit;
     },
     result: CreatePostResult,
   ): Promise<void> {
@@ -406,6 +416,7 @@ export class Publisher {
       intent_id?: string;
       content_hash?: string;
       semantic_identity?: string;
+      audit?: PublicationAudit;
     } = { origin: payload.origin },
   ): Promise<CreatePostResult> {
     return this.state.locked(`outgoing-${payloadKey(payload)}`, async () => {
@@ -433,7 +444,7 @@ export class Publisher {
         attempts,
       });
       try {
-        const result = await this.api.publish(payload);
+        const result = await this.api.publish(payload, provenance.audit);
         await this.state.write(`processed-${payloadKey(payload)}.json`, {
           id: result.post.id,
           payload,
@@ -496,6 +507,7 @@ export class Publisher {
           intent_id?: string;
           content_hash?: string;
           semantic_identity?: string;
+          audit?: PublicationAudit;
         } = {
           origin: provenance.origin === 'telegram' ? 'telegram' : 'auto',
           ...(typeof provenance.intent_id === 'string'
@@ -506,6 +518,9 @@ export class Publisher {
             : {}),
           ...(typeof provenance.semantic_identity === 'string'
             ? { semantic_identity: provenance.semantic_identity }
+            : {}),
+          ...(validatePublicationAudit(provenance.audit)
+            ? { audit: provenance.audit }
             : {}),
         };
         const result = await this.submit(payload.value, replayProvenance);
