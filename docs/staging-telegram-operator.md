@@ -8,12 +8,12 @@ Shmul.
 ## Staging state already prepared
 
 - Worker: `waagd-staging`, deployed version
-  `51b64cc2-f5d9-4532-b9ef-d1f64acd6ac1`.
+  `19782463-4ee7-4598-962e-f8924df1fcf2` (source/media polish).
 - D1: `waagd-staging` (`b943e33b-85ba-40e3-96b3-7ac5e9ef4578`), with
   migrations `0001_posts.sql` and `0002_url_less_news.sql`.
 - Backup: `/Users/mikemmagik/Documents/waagd-staging-backups/waagd-staging-2026-10-21-pre-0002/waagd-staging-pre-migration.sql`.
   Its SHA-256 is recorded in the adjacent `manifest.txt`; the SQL is mode 0600.
-- Worker rollback target: `72b05f33-81a9-4d64-afdc-7e3897bf36cc`.
+- Immediate Worker rollback target: `51b64cc2-f5d9-4532-b9ef-d1f64acd6ac1`.
 
 The public staging hostname is protected by Cloudflare Access. A browser login
 or an Access service token is therefore required for staging evidence; a normal
@@ -131,6 +131,23 @@ sanitized OpenClaw runtime inspection, and before/after counts. Do not preserve
 secrets, Access redirect URLs, raw Telegram payloads, or owner identifiers in
 the repository.
 
+## Source and media polish verification
+
+This deployment does not change `PublicationIntent v1`, owner allowlisting,
+Publisher state, OpenClaw, or D1 data. It changes presentation and metadata
+attribution only:
+
+- `origin=telegram` remains the audit channel; `source` is now resolved from
+  the original public URL.
+- `fd2434ea-9a24-4ad5-b69b-dd4e3c0ec85b` is intentionally still stored as
+  `source=Telegram`, but its card must show **Bangkok Post** from its original
+  URL. Open its staging permalink while signed in through the existing Access
+  flow; do not edit or republish the row.
+- For a new owner URL, confirm that the card source is the publisher/domain
+  rather than `Telegram`. Exact YouTube, Instagram, TikTok and Reddit hosts
+  retain the existing consent-gated embed path; an unsupported path becomes an
+  original-link fallback card and never auto-plays.
+
 ## Rollback
 
 1. Disable the linked plugin with the existing OpenClaw control path. Keep the
@@ -140,7 +157,7 @@ the repository.
    the staged version list:
 
    ```bash
-   npx wrangler rollback 72b05f33-81a9-4d64-afdc-7e3897bf36cc \
+   npx wrangler rollback 51b64cc2-f5d9-4532-b9ef-d1f64acd6ac1 \
      --name waagd-staging \
      --message 'Rollback WAAGD staging Telegram acceptance'
    ```
