@@ -147,7 +147,9 @@ test(
       await proxy.dispose();
       proxy = undefined;
       await writeConfig(join(root, 'db/migrations'));
-      assert.match(migrate(), /0002_url_less_news.sql/);
+      const appliedMigrations = migrate();
+      assert.match(appliedMigrations, /0002_url_less_news.sql/);
+      assert.match(appliedMigrations, /0003_publication_intent_v2_quota.sql/);
       assert.match(migrate(), /No migrations to apply/);
       proxy = await getPlatformProxy<{ DB: D1Database }>({
         configPath: config,
@@ -911,8 +913,20 @@ test(
       );
       await reset();
       await t.test(
-        'automatic daily quota is atomic, durable across deletion, and excludes Telegram',
+        'automatic daily quota is atomic, UTC-partitioned, durable across deletion, and excludes Telegram',
         async () => {
+          const previousUtcDay = await db
+            .prepare("SELECT strftime('%Y-%m-%d', 'now', '-1 day') AS day")
+            .first<{ day: string }>();
+          // A prior UTC day is deliberately full. The trigger must use D1's
+          // current UTC clock rather than this client-controlled test payload.
+          for (let slot = 1; slot <= 5; slot++)
+            await db
+              .prepare(
+                'INSERT INTO automatic_publication_slots (utc_day, slot, post_id) VALUES (?, ?, ?)',
+              )
+              .bind(previousUtcDay!.day, slot, `prior-day-${slot}`)
+              .run();
           const automatic = (index: number): CreatePostInput => ({
             ...fixture,
             origin: 'auto',
@@ -947,8 +961,118 @@ test(
           assert.equal(
             await db
               .prepare(
-                'SELECT COUNT(*) AS count FROM automatic_publication_slots',
+                "SELECT COUNT(*) AS count FROM automatic_publication_slots WHERE utc_day = strftime('%Y-%m-%d', 'now')",
               )
+              .first<number>('count'),
+            5,
+          );
+          assert.equal(
+            await db
+              .prepare(
+                'SELECT COUNT(*) AS count FROM automatic_publication_slots WHERE utc_day = ?',
+              )
+              .bind(previousUtcDay!.day)
+              .first<number>('count'),
+            5,
+          );
+        },
+      );
+      await reset();
+      await t.test(
+        'v1 Discovery ingress cannot bypass quota and an exhausted request has no success receipt',
+        async () => {
+          let writes = 0;
+          const state = new State(join(directory, 'v1-quota-state'));
+          const publisher = new Publisher(
+            new Api(base, 'integration-test-only', async (url, init) => {
+              if (init?.method === 'POST') writes++;
+              return fetch(url, init);
+            }),
+            state,
+            { discoveryIngressToken: 'discovery-ingress-test-token' },
+          );
+          await publisher.setPaused('auto', false);
+          const v1 = (index: number) =>
+            withPublicationIntentContentHash({
+              version: 1 as const,
+              intent_id: `discovery-v1-quota-${String(index).padStart(2, '0')}`,
+              origin: 'auto' as const,
+              authorization: {
+                kind: 'discovery' as const,
+                approved: true as const,
+              },
+              editorial: {
+                decision_id: `decision-v1-quota-${index}`,
+                source_event_id: `source-v1-quota-${index}`,
+                source_attribution: 'Quota test source',
+                approved_at: '2026-10-22T00:00:00.000Z',
+                publication_policy: {
+                  version: 'policy-v1',
+                  outcome: 'approved' as const,
+                },
+              },
+              post: {
+                ...fixture,
+                origin: 'auto' as const,
+                url: `https://example.com/v1-quota-${index}`,
+                canonical_url: `https://example.com/v1-quota-${index}`,
+                source_item_id: `v1-quota-${index}`,
+                body: 'A complete v1 automatic article for quota testing.',
+                references: [
+                  {
+                    url: `https://example.com/v1-quota-${index}`,
+                    title: 'Quota test source',
+                  },
+                ],
+              },
+            });
+          const attempts = await Promise.allSettled(
+            Array.from({ length: 6 }, (_, index) =>
+              publisher.submitDiscoveryIntent(
+                v1(index),
+                'discovery-ingress-test-token',
+              ),
+            ),
+          );
+          assert.equal(
+            attempts.filter((attempt) => attempt.status === 'fulfilled').length,
+            5,
+          );
+          const rejected = attempts.find(
+            (attempt) => attempt.status === 'rejected',
+          );
+          assert.match(
+            String((rejected as PromiseRejectedResult).reason),
+            /429/,
+          );
+          // The authenticated Publisher retries a 429 according to its bounded
+          // transport policy; none of those attempts may create a sixth post.
+          assert.ok(writes >= 6);
+          assert.equal((await publisher.api.posts()).length, 5);
+          const receipts = await Promise.all(
+            (await state.names())
+              .filter((name) => name.startsWith('receipt-'))
+              .map((name) => state.read(name)),
+          );
+          assert.equal(
+            receipts.filter(
+              (receipt) =>
+                receipt !== null &&
+                (receipt as { status?: unknown }).status === 'published',
+            ).length,
+            5,
+          );
+          assert.equal(
+            receipts.filter(
+              (receipt) =>
+                receipt !== null &&
+                (receipt as { status?: unknown }).status === 'queued',
+            ).length,
+            1,
+          );
+          assert.equal(
+            await db
+              .prepare('SELECT COUNT(*) AS count FROM publication_audit')
               .first<number>('count'),
             5,
           );
@@ -1502,7 +1626,7 @@ test(
       );
       await reset();
       await t.test(
-        'actual final Discovery f1c7766 producer enters the core ingress once and reaches Worker/D1 and frontend parser',
+        'actual pinned Discovery producer enters the core ingress once and reaches Worker/D1 and frontend parser',
         { skip: !process.env.WAAGD_DISCOVERY_ROOT },
         async () => {
           const discoveryRoot = process.env.WAAGD_DISCOVERY_ROOT!;

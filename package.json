@@ -17,11 +17,12 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "node --test tests/contracts.test.ts tests/worker.test.ts tests/frontend.test.ts tests/media.test.ts automation/tests/*.test.ts",
+    "test:publication-intent-v2": "python3 automation/tests/publication-intent-v2-hash.py",
     "test:smoke": "node --test tests/build.smoke.test.ts",
     "build:frontend": "astro build",
     "build:worker": "wrangler deploy --dry-run --outdir build/worker",
     "build": "npm run build:frontend && npm run build:worker",
-    "validate": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run test:smoke && npm run test:backend",
+    "validate": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run test:publication-intent-v2 && npm run test:smoke && npm run test:backend",
     "test:backend": "node --test tests/backend.integration.test.ts",
     "test:browser": "node tests/frontend.browser.mjs",
     "db:init": "wrangler d1 migrations apply DB --local"

@@ -36,6 +36,33 @@ never independent fact verification. Unknown routes/fields, v1 route fields,
 unsafe URLs, bad hashes and incomplete provenance are denied. The v2 hash uses
 the frozen v1 document order plus these two editorial fields.
 
+## Hash wire format and fixtures
+
+`content_hash` is excluded from the SHA-256 input. The producer builds a compact
+UTF-8 JSON object in this exact order (not the order received over HTTP):
+
+1. root: `version`, `intent_id`, `origin`, `authorization`, `editorial`, `post`;
+2. authorization: `kind`, `approved`;
+3. editorial: v1 fields `decision_id`, `source_event_id`,
+   `source_attribution`, `approved_at`, `publication_policy`, then v2
+   `review_route`, `trusted_publisher`;
+4. policy: `version`, `outcome`; trusted provenance: `publisher_id`,
+   `publisher_name`, `trusted_rss_url`, `article_url`, `article_host`,
+   `verified_at`, `safety_gates`; safety gates: `publisher_identity`,
+   `safe_retrieval`, `sensitive_content`;
+5. post: `type`, `url`, `canonical_url`, `source_item_id`, `title`, `source`,
+   `origin`, `preview`, `embed`, `body`, `references`.
+
+Use compact JSON (`ensure_ascii=False`, `allow_nan=False` in Python; UTF-8) and
+SHA-256 lowercase hex. Object keys received in another order are rebuilt in the
+order above before hashing. The committed cross-repository test vectors are:
+
+- `automation/tests/fixtures/publication-intent-v2-trusted-publisher.json`
+- `automation/tests/fixtures/publication-intent-v2-independently-verified.json`
+
+They include the expected hash and are valid end-to-end publisher envelopes,
+not illustrative partial snippets.
+
 ## D1 quota and audit
 
 Migration `0003_publication_intent_v2_quota.sql` adds immutable
@@ -47,12 +74,27 @@ no slot path. Publisher v1/v2 receipts persist the audit envelope; v1 route is
 
 ## Staging operator packet
 
-Keep `auto_paused=true`. Before any authorized staging migration, export only
-the staging D1 database, verify its SHA-256 outside Git, apply only `0003`, and
-read back migrations/triggers/slot rows. The migration is additive: Worker
-rollback does not require D1 restore; use a reviewed forward corrective
-migration if a trigger must later be disabled. Do not send Discovery, Telegram,
-LLM, OpenClaw, production, or DNS traffic for this change.
+Keep `auto_paused=true`. Before any authorized staging migration:
+
+1. Export only the `waagd-staging` D1 database to an operator-controlled
+   private location, record its SHA-256 and verify that the export can be read.
+   Keep the export and its hash outside Git and chat transcripts.
+2. Confirm the target Worker is `waagd-staging`, the target D1 binding is the
+   staging database, and `d1_migrations` contains only the expected earlier
+   migrations. Apply only `0003_publication_intent_v2_quota.sql`.
+3. Read back the migration marker, `publication_audit`,
+   `automatic_publication_slots`, and the three `0003` triggers. Check existing
+   posts count and IDs are unchanged. Existing posts are intentionally not
+   backfilled and therefore consume no historic slots.
+4. Deploy a reviewed staging Worker only after this check. Keep Discovery auto
+   paused. Sanity-check one read-only feed request and no automatic write.
+
+The migration is additive, so rolling the Worker back to v0.1.1 is compatible
+with the retained schema and does not require D1 restoration. Do not down-migrate
+or delete audit/slot rows to "free" a quota. Restore the verified export only
+for a separately approved database incident; otherwise use a reviewed forward
+corrective migration if a trigger must later change. Do not send Discovery,
+Telegram, LLM, OpenClaw, production, or DNS traffic for this change.
 
 ## Minimal Discovery change
 

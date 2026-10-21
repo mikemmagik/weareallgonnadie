@@ -4,6 +4,7 @@ import {
   normalizePublicationUrl,
   validateCreatePostInput,
 } from '../../shared/contracts.ts';
+import { publicUrl } from './http.ts';
 import type {
   CreatePostInput,
   ValidationIssue,
@@ -129,6 +130,16 @@ function timestamp(
   return true;
 }
 
+/** Provenance itself must not carry a plaintext or local retrieval target. */
+function isTrustedPublisherUrl(value: unknown): value is string {
+  if (!isHttpUrl(value)) return false;
+  try {
+    return publicUrl(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Cross-language canonical JSON for content hashing: sort object keys, preserve
  * array order, use compact UTF-8 JSON, and reject values Python cannot emit with
@@ -198,7 +209,27 @@ function publicationIntentHashDocument(
           outcome: editorial.publication_policy.outcome,
         },
         review_route: editorial.review_route,
-        trusted_publisher: editorial.trusted_publisher,
+        // Rebuild every v2 provenance level in wire order. Incoming JSON key
+        // order is transport noise and must not change a cross-language hash.
+        trusted_publisher:
+          editorial.trusted_publisher === null
+            ? null
+            : {
+                publisher_id: editorial.trusted_publisher.publisher_id,
+                publisher_name: editorial.trusted_publisher.publisher_name,
+                trusted_rss_url: editorial.trusted_publisher.trusted_rss_url,
+                article_url: editorial.trusted_publisher.article_url,
+                article_host: editorial.trusted_publisher.article_host,
+                verified_at: editorial.trusted_publisher.verified_at,
+                safety_gates: {
+                  publisher_identity:
+                    editorial.trusted_publisher.safety_gates.publisher_identity,
+                  safe_retrieval:
+                    editorial.trusted_publisher.safety_gates.safe_retrieval,
+                  sensitive_content:
+                    editorial.trusted_publisher.safety_gates.sensitive_content,
+                },
+              },
       },
       post: {
         type: post.type,
@@ -507,11 +538,11 @@ export function validatePublicationIntent(
               issues,
             );
             for (const key of ['trusted_rss_url', 'article_url'] as const)
-              if (!isHttpUrl(provenance[key]))
+              if (!isTrustedPublisherUrl(provenance[key]))
                 issue(
                   issues,
                   `editorial.trusted_publisher.${key}`,
-                  'Expected a public HTTP(S) URL.',
+                  'Expected a public HTTPS URL.',
                 );
             if (
               typeof provenance.article_host !== 'string' ||
@@ -523,7 +554,7 @@ export function validatePublicationIntent(
                 'Expected a normalized article hostname.',
               );
             else if (
-              isHttpUrl(provenance.article_url) &&
+              isTrustedPublisherUrl(provenance.article_url) &&
               new URL(provenance.article_url).hostname !==
                 provenance.article_host
             )
@@ -586,7 +617,7 @@ export function validatePublicationIntent(
       isRecord(input.editorial) &&
       input.editorial.review_route === 'trusted_publisher' &&
       isRecord(input.editorial.trusted_publisher) &&
-      isHttpUrl(input.editorial.trusted_publisher.article_url) &&
+      isTrustedPublisherUrl(input.editorial.trusted_publisher.article_url) &&
       post.value.canonical_url !== null &&
       normalizePublicationUrl(post.value.canonical_url) !==
         normalizePublicationUrl(input.editorial.trusted_publisher.article_url)
