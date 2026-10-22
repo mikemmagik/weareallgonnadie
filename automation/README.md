@@ -59,16 +59,17 @@ secrets in command arguments, model prompts, plugin configuration or public asse
 The CLI does not implicitly load `.env`: use Node `--env-file=/private/path/file.env`
 or the service owner's environment injection.
 
-| Variable                     | Required for            | Meaning                                                      |
-| ---------------------------- | ----------------------- | ------------------------------------------------------------ |
-| `WAAGD_API_ORIGIN`           | All commands            | HTTPS site origin; loopback HTTP allowed locally             |
-| `WAAGD_API_WRITE_TOKEN`      | All commands            | API bearer secret; never sent on public GET                  |
-| `WAAGD_STATE_DIR`            | All commands            | Absolute private state directory outside repo                |
-| `WAAGD_TELEGRAM_ALLOWED_IDS` | Existing ingress        | Comma-separated numeric owner IDs; empty denies all          |
-| `WAAGD_OPENCLAW_AGENT`       | Daily/monthly           | Dedicated agent; default `waagd`                             |
-| `WAAGD_OPENCLAW_BIN`         | Daily/monthly           | Existing executable, preferably absolute; default `openclaw` |
-| `WAAGD_TIMEZONE`             | Monthly                 | IANA timezone, default `Asia/Bangkok`; match schedule        |
-| `WAAGD_SOURCES_FILE`         | Optional daily override | JSON file, defaults to supplied source example               |
+| Variable                                | Required for            | Meaning                                                      |
+| --------------------------------------- | ----------------------- | ------------------------------------------------------------ |
+| `WAAGD_API_ORIGIN`                      | All commands            | HTTPS site origin; loopback HTTP allowed locally             |
+| `WAAGD_API_WRITE_TOKEN`                 | All commands            | API bearer secret; never sent on public GET                  |
+| `WAAGD_STATE_DIR`                       | All commands            | Absolute private state directory outside repo                |
+| `WAAGD_ALLOW_PRODUCTION_PUBLISH_IMPORT` | Production import only  | Must be exactly `true`; disabled by default                  |
+| `WAAGD_TELEGRAM_ALLOWED_IDS`            | Existing ingress        | Comma-separated numeric owner IDs; empty denies all          |
+| `WAAGD_OPENCLAW_AGENT`                  | Daily/monthly           | Dedicated agent; default `waagd`                             |
+| `WAAGD_OPENCLAW_BIN`                    | Daily/monthly           | Existing executable, preferably absolute; default `openclaw` |
+| `WAAGD_TIMEZONE`                        | Monthly                 | IANA timezone, default `Asia/Bangkok`; match schedule        |
+| `WAAGD_SOURCES_FILE`                    | Optional daily override | JSON file, defaults to supplied source example               |
 
 With the local or deployed API and a privately supplied environment:
 
@@ -78,6 +79,43 @@ node --env-file=/absolute/private/waagd.env automation/cli.ts monthly
 node --env-file=/absolute/private/waagd.env automation/cli.ts monthly 2026-09
 node --env-file=/absolute/private/waagd.env automation/cli.ts retry
 ```
+
+### Discovery PublicationIntent import
+
+The unattended Discovery runner invokes exactly this single-intent interface:
+
+```sh
+node --env-file=/absolute/private/waagd.env automation/cli.ts publish-import --intent-file /absolute/private/discovery-intent.json --ingress-token-file /absolute/private/discovery-ingress.token
+```
+
+Both files must be absolute, owned by the invoking user, unlinked regular files
+with mode `0600`; symlinks, non-private files, oversized inputs, batches, and
+invalid JSON are rejected. The intent file is bounded to 256 KiB and the separate
+ingress-token file to 4 KiB. The token must not be passed through the environment,
+command line, or Discovery editorial process.
+
+By default the importer accepts the staging origin
+`https://waagd-staging.waagd.workers.dev` (and loopback for automated tests) only.
+Production remains disabled until the operator has completed a separate activation
+procedure and sets `WAAGD_ALLOW_PRODUCTION_PUBLISH_IMPORT=true` in the private
+environment file. This flag does not deploy or otherwise alter infrastructure.
+
+The only stdout record is one of these JSON outcomes:
+
+| Outcome     | Exit code | Meaning                                                                              |
+| ----------- | --------- | ------------------------------------------------------------------------------------ |
+| `created`   | 0         | A new post was confirmed.                                                            |
+| `duplicate` | 0         | The existing post/receipt was confirmed.                                             |
+| `held`      | 2         | Auto publication is paused or the Worker confirmed a quota hold.                     |
+| `uncertain` | 3         | A retryable response was ambiguous; the durable receipt/outgoing record is retained. |
+| `failed`    | 1         | Input, authorization, validation, conflict, or terminal API failure.                 |
+
+Do not treat `uncertain` as a success and do not change the intent to retry it.
+Keep one `WAAGD_STATE_DIR` for every scheduled invocation: it is where receipts,
+pending outgoing records, locks, and the `auto_paused` kill switch persist. A new
+state directory starts auto-paused. An operator must explicitly run `policy auto
+resume` once after staging acceptance; the importer never resumes it and `policy
+auto pause` remains the emergency stop.
 
 The existing OpenClaw ingress calls the pure Telegram adapter directly; it does not
 run this CLI. The guarded `telegram` CLI command is legacy compatibility only and
