@@ -1,0 +1,29 @@
+// Copy outside this repository, replace the marked database ID after creating
+// the dedicated production D1 database, and do not commit that copy.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "weareallgonnadie-production",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-12",
+  "workers_dev": false,
+  "routes": [
+    {
+      "pattern": "weareallgonnadie.com",
+      "custom_domain": true,
+    },
+  ],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api", "/api/*", "/embed/reddit"],
+    "not_found_handling": "404-page",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "waagd-production",
+      "database_id": "REPLACE_WITH_CREATED_PRODUCTION_D1_DATABASE_ID",
+      "migrations_dir": "db/migrations",
+    },
+  ],
+}

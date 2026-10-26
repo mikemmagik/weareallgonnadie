@@ -1,5 +1,9 @@
 # Deployment preparation
 
+For the v1.0.0 production handoff, use the dedicated
+[production deployment runbook](production-deployment.md). This document describes
+the local/sentinel baseline and remains intentionally non-deploying.
+
 ## Development configuration
 
 The committed configuration is local preparation only:

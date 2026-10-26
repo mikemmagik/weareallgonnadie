@@ -5,10 +5,9 @@ monthly Humanity Changelogs. Astro builds static assets; a Cloudflare Worker ser
 public reads and authenticated writes against D1. Local automation talks only to
 that HTTP API. The site runs independently of automation or OpenClaw.
 
-**Status:** Sprint 6 stable-release candidate on `sprint-6-site-integration`.
-The site has one Publisher, a pinned WAAGD Discovery ingress, and a URL-only owner
-Telegram adapter. No production deployment, real bot or OpenClaw configuration was
-created.
+**Status:** v1.0.0 production release artifact. The site has one Publisher, a
+file-based WAAGD Discovery import boundary, and a URL-only owner Telegram adapter.
+This repository does not deploy or alter Cloudflare, DNS, staging, or OpenClaw.
 
 ## Requirements and local startup
 
@@ -110,7 +109,10 @@ only to cited references. A stable monthly identity makes reruns idempotent.
 - `automation/`: HTTP client, private retry state, discovery, Telegram and changelog.
 - `tests/`, `automation/tests/`: unit, browser, build and local integration verification.
 - [Architecture](docs/architecture.md), [decisions](docs/decisions.md),
-  [deployment prerequisites](docs/deployment.md), [integration handoff](docs/handoff.md).
+  [deployment prerequisites](docs/deployment.md),
+  [v1.0.0 production runbook](docs/production-deployment.md),
+  [Discovery contract verification](docs/discovery-v1.0.0-compatibility.md),
+  [integration handoff](docs/handoff.md).
 
 Known limits: provider playback depends on upstream policy; text/Markdown uses a safe
 small subset; source parsers are lightweight; pagination is not snapshot isolation.
