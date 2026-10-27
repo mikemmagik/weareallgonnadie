@@ -8,6 +8,7 @@ import {
   type OpenClawMessageReceivedContext,
   type OpenClawMessageReceivedEvent,
 } from '../telegram/openclaw.ts';
+import { telegramIngressTarget } from './telegram-target.ts';
 import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
 
 interface OpenClawPluginApi {
@@ -27,23 +28,18 @@ interface OpenClawPluginApi {
 }
 
 /**
- * Staging-only link target for the existing OpenClaw Telegram ingress.
+ * Explicit Website target for the existing OpenClaw Telegram ingress.
  * It declares no channel, bot token, webhook or polling ownership: OpenClaw
  * remains the sole receiver and delivers the returned text on its own route.
  */
 export default definePluginEntry({
   id: 'waagd-telegram-ingress',
-  name: 'WAAGD Telegram staging ingress',
+  name: 'WAAGD Telegram ingress',
   description:
     'Owner URL submission through the existing OpenClaw Telegram route.',
   register(api: OpenClawPluginApi) {
     const config = configuration();
-    if (
-      new URL(config.apiOrigin).hostname !== 'waagd-staging.waagd.workers.dev'
-    )
-      throw new Error(
-        'WAAGD Telegram OpenClaw plugin is restricted to waagd-staging.',
-      );
+    telegramIngressTarget(config.apiOrigin, config.telegramIngressEnvironment);
     if (config.allowedIds.size === 0)
       throw new Error(
         'WAAGD_TELEGRAM_ALLOWED_IDS must contain at least one owner ID.',

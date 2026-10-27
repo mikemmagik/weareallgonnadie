@@ -1,7 +1,7 @@
 {
   "id": "waagd-telegram-ingress",
-  "name": "WAAGD Telegram staging ingress",
-  "description": "Routes authorized owner URLs from the existing OpenClaw Telegram ingress to WAAGD staging.",
+  "name": "WAAGD Telegram ingress",
+  "description": "Routes authorized owner URLs from the existing OpenClaw Telegram ingress to one explicitly selected WAAGD Website environment.",
   "activation": {
     "onCapabilities": ["hook"]
   },

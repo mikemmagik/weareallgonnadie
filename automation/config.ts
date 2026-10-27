@@ -43,6 +43,8 @@ export function configuration(env: NodeJS.ProcessEnv = process.env) {
         ? { clientId: accessClientId, clientSecret: accessClientSecret }
         : undefined,
     discoveryIngressToken: env.WAAGD_DISCOVERY_INGRESS_TOKEN?.trim() || '',
+    telegramIngressEnvironment:
+      env.WAAGD_TELEGRAM_INGRESS_ENVIRONMENT?.trim() || '',
     stateDir,
     allowedIds,
     botToken: env.WAAGD_TELEGRAM_BOT_TOKEN ?? '',

@@ -21,9 +21,10 @@ verifies the numeric owner allowlist, rejects media without fetching it, invokes
 the sole Publisher, and returns its permalink text. It never invokes an
 editorial model.
 
-Follow the staging-only [operator packet](../../docs/staging-telegram-operator.md).
-The target MacBook's installed Gateway must still prove the actual event and
-reply path during the live acceptance before Telegram is called integrated.
+Use the [production cutover packet](../../docs/telegram-production-cutover.md)
+for the exact staging and production environment files. The target Gateway must
+still prove the actual event and reply path during the live acceptance before
+Telegram is called integrated.
 
 ## Safety constraints
 
@@ -33,6 +34,12 @@ reply path during the live acceptance before Telegram is called integrated.
   webhook/polling owner.
 - Keep `WAAGD_TELEGRAM_ALLOWED_IDS` as numeric owner IDs in private runtime
   configuration; never authorize by username or message text.
+- Set `WAAGD_TELEGRAM_INGRESS_ENVIRONMENT` to `staging` or `production` and use
+  only its exact paired origin. The plugin fails closed for any other host,
+  scheme, path, credentials, query, fragment, or environment mismatch.
+- Give staging and production distinct private environment files, write tokens,
+  Access credentials (if used), and `WAAGD_STATE_DIR` values. Never place a
+  production write token in the staging Gateway service environment.
 - Direct file attachments receive `UNSUPPORTED MEDIA`; R2, file downloads and media
   storage are not planned in this release.
 - Keep the Publisher state directory and Worker/Discovery secrets outside Git,
@@ -40,8 +47,8 @@ reply path during the live acceptance before Telegram is called integrated.
 
 ## Operator acceptance, not performed here
 
-After explicit staging authorization, send one owner URL through the existing ingress
-and verify a permalink reply, redeliver the same event, then confirm an unauthorized
-sender and a binary attachment create no post. Keep auto paused while performing the
-Telegram check; Telegram owner URLs intentionally remain independent of that
-Discovery control. No production deployment follows from this document.
+After explicit environment authorization, send one owner URL through the existing
+ingress and verify a permalink reply, redeliver the same event, then confirm an
+unauthorized sender and a binary attachment create no post. Keep auto paused while
+performing the Telegram check; Telegram owner URLs intentionally remain independent
+of that Discovery control. This package does not deploy the Website, Worker, or D1.

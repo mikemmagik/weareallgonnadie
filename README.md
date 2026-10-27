@@ -5,9 +5,10 @@ monthly Humanity Changelogs. Astro builds static assets; a Cloudflare Worker ser
 public reads and authenticated writes against D1. Local automation talks only to
 that HTTP API. The site runs independently of automation or OpenClaw.
 
-**Status:** v1.0.0 production release artifact. The site has one Publisher, a
-file-based WAAGD Discovery import boundary, and a URL-only owner Telegram adapter.
-This repository does not deploy or alter Cloudflare, DNS, staging, or OpenClaw.
+**Status:** v1.0.1 Telegram cutover patch atop the v1.0.0 production artifact. The
+site has one Publisher, a file-based WAAGD Discovery import boundary, and a URL-only
+owner Telegram adapter. This repository does not deploy or alter Cloudflare, DNS,
+staging, or OpenClaw.
 
 ## Requirements and local startup
 
@@ -91,9 +92,10 @@ publish with available metadata or a neutral hostname title. Confirmed original
 local/private targets remain rejected.
 
 [OpenClaw integration](automation/openclaw/INSTALL.md) documents the pure adapter
-boundary for the existing bot ingress. Its actual field mapping and reply path remain
-an operator-owned staging check; no additional bot, poller, model call, or service is
-introduced by this repository.
+boundary for the existing bot ingress. The
+[Telegram production cutover packet](docs/telegram-production-cutover.md) sets the
+exact allowlisted Website targets and isolated state/credential requirements; no
+additional bot, poller, model call, or service is introduced by this repository.
 
 Monthly runs paginate all visible publications in the selected calendar month using
 `WAAGD_TIMEZONE` (default Asia/Bangkok), excluding deleted posts and other changelogs.

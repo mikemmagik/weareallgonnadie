@@ -59,17 +59,18 @@ secrets in command arguments, model prompts, plugin configuration or public asse
 The CLI does not implicitly load `.env`: use Node `--env-file=/private/path/file.env`
 or the service owner's environment injection.
 
-| Variable                                | Required for            | Meaning                                                      |
-| --------------------------------------- | ----------------------- | ------------------------------------------------------------ |
-| `WAAGD_API_ORIGIN`                      | All commands            | HTTPS site origin; loopback HTTP allowed locally             |
-| `WAAGD_API_WRITE_TOKEN`                 | All commands            | API bearer secret; never sent on public GET                  |
-| `WAAGD_STATE_DIR`                       | All commands            | Absolute private state directory outside repo                |
-| `WAAGD_ALLOW_PRODUCTION_PUBLISH_IMPORT` | Production import only  | Must be exactly `true`; disabled by default                  |
-| `WAAGD_TELEGRAM_ALLOWED_IDS`            | Existing ingress        | Comma-separated numeric owner IDs; empty denies all          |
-| `WAAGD_OPENCLAW_AGENT`                  | Daily/monthly           | Dedicated agent; default `waagd`                             |
-| `WAAGD_OPENCLAW_BIN`                    | Daily/monthly           | Existing executable, preferably absolute; default `openclaw` |
-| `WAAGD_TIMEZONE`                        | Monthly                 | IANA timezone, default `Asia/Bangkok`; match schedule        |
-| `WAAGD_SOURCES_FILE`                    | Optional daily override | JSON file, defaults to supplied source example               |
+| Variable                                | Required for            | Meaning                                                         |
+| --------------------------------------- | ----------------------- | --------------------------------------------------------------- |
+| `WAAGD_API_ORIGIN`                      | All commands            | HTTPS site origin; loopback HTTP allowed locally                |
+| `WAAGD_API_WRITE_TOKEN`                 | All commands            | API bearer secret; never sent on public GET                     |
+| `WAAGD_STATE_DIR`                       | All commands            | Absolute private state directory outside repo                   |
+| `WAAGD_ALLOW_PRODUCTION_PUBLISH_IMPORT` | Production import only  | Must be exactly `true`; disabled by default                     |
+| `WAAGD_TELEGRAM_ALLOWED_IDS`            | Existing ingress        | Comma-separated numeric owner IDs; empty denies all             |
+| `WAAGD_TELEGRAM_INGRESS_ENVIRONMENT`    | Existing OpenClaw hook  | Required `staging` or `production`; must match exact API origin |
+| `WAAGD_OPENCLAW_AGENT`                  | Daily/monthly           | Dedicated agent; default `waagd`                                |
+| `WAAGD_OPENCLAW_BIN`                    | Daily/monthly           | Existing executable, preferably absolute; default `openclaw`    |
+| `WAAGD_TIMEZONE`                        | Monthly                 | IANA timezone, default `Asia/Bangkok`; match schedule           |
+| `WAAGD_SOURCES_FILE`                    | Optional daily override | JSON file, defaults to supplied source example                  |
 
 With the local or deployed API and a privately supplied environment:
 
@@ -122,6 +123,9 @@ run this CLI. The guarded `telegram` CLI command is legacy compatibility only an
 must not be used for `@waagd_bot`. Other commands are one-shot. JSON stdout reports
 daily results, including partial failures; a run that cannot proceed exits nonzero.
 Errors exclude upstream text, credentials and bodies.
+
+For the two exact Website targets and isolated Gateway credentials/state, follow the
+[Telegram production cutover packet](../docs/telegram-production-cutover.md).
 
 ## Sources
 

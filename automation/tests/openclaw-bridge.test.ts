@@ -5,6 +5,7 @@ import {
   type OpenClawTelegramBridgeOptions,
 } from '../telegram/openclaw.ts';
 import type { OpenClawTelegramInbound } from '../telegram/handler.ts';
+import { telegramIngressTarget } from '../openclaw/telegram-target.ts';
 
 function fixture(submit: OpenClawTelegramBridgeOptions['submit']) {
   return new OpenClawTelegramBridge({
@@ -12,6 +13,35 @@ function fixture(submit: OpenClawTelegramBridgeOptions['submit']) {
     submit,
   });
 }
+
+test('OpenClaw Website target permits only explicit, environment-matched origins', () => {
+  assert.deepEqual(
+    telegramIngressTarget('https://waagd-staging.waagd.workers.dev', 'staging'),
+    {
+      environment: 'staging',
+      origin: 'https://waagd-staging.waagd.workers.dev',
+    },
+  );
+  assert.deepEqual(
+    telegramIngressTarget('https://weareallgonnadie.com/', 'production'),
+    {
+      environment: 'production',
+      origin: 'https://weareallgonnadie.com',
+    },
+  );
+  const rejected: readonly [string, string][] = [
+    ['https://www.weareallgonnadie.com', 'production'],
+    ['https://weareallgonnadie.com.evil.example', 'production'],
+    ['https://waagd-staging.waagd.workers.dev', 'production'],
+    ['http://weareallgonnadie.com', 'production'],
+    ['https://weareallgonnadie.com/api', 'production'],
+    ['https://user:pass@weareallgonnadie.com', 'production'],
+    ['https://weareallgonnadie.com?next=evil', 'production'],
+    ['https://weareallgonnadie.com', 'preview'],
+  ];
+  for (const [origin, environment] of rejected)
+    assert.throws(() => telegramIngressTarget(origin, environment));
+});
 
 test('OpenClaw v2026.10.3 bridge projects observed owner text into a stable intent identity', async () => {
   const submitted: OpenClawTelegramInbound[] = [];
